@@ -32,11 +32,12 @@ def run_submission(
     sheet_name: str,
     status: str,
     dry_run: bool,
+    payload_defaults: dict[str, Any] | None = None,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> None:
     """Read students from a sheet and submit each one to Google Forms."""
     rows = read_sheet_rows(sheet_name)
-    payloads = [_row_to_payload(row, status) for row in rows]
+    payloads = [_row_to_payload(row, status, payload_defaults or {}) for row in rows]
 
     print(f"Alunos encontrados na aba '{sheet_name}': {len(payloads)}")
 
@@ -70,13 +71,18 @@ def run_submission(
             print(f"[ERRO] {payload.nome} ({payload.matricula}) - {exc}")
 
 
-def _row_to_payload(row: dict[str, Any], status: str) -> MonitoriaPayload:
+def _row_to_payload(
+    row: dict[str, Any],
+    status: str,
+    payload_defaults: dict[str, Any],
+) -> MonitoriaPayload:
     return MonitoriaPayload(
         nome=str(row["nome"]).strip(),
         matricula=str(row["matricula"]).strip(),
         data=_today_sao_paulo(),
         agente=str(row.get("agente", "")).strip(),
         status=status,
+        **payload_defaults,
     )
 
 

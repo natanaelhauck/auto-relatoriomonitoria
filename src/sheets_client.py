@@ -32,6 +32,7 @@ class SheetsSettings:
     spreadsheet_id: str
     sheet_nao_agendados: str
     sheet_finalizados: str
+    sheet_faltas: str
     default_agente: str
 
 
@@ -78,6 +79,7 @@ def load_sheets_settings() -> SheetsSettings:
         spreadsheet_id=_required_env("GOOGLE_SPREADSHEET_ID"),
         sheet_nao_agendados=_required_env("SHEET_NAO_AGENDADOS"),
         sheet_finalizados=_required_env("SHEET_FINALIZADOS"),
+        sheet_faltas=_required_env("SHEET_FALTAS"),
         default_agente=os.getenv("DEFAULT_AGENTE", "").strip(),
     )
 

@@ -28,5 +28,25 @@ para uma integracao futura com Read IA.
 2. Instalar dependencias com `pip install -r requirements.txt`.
 3. Configurar credenciais e variaveis locais em arquivos nao versionados.
 
-> A logica completa ainda nao foi implementada. Os modulos atuais contem apenas
-> docstrings e funcoes placeholder para orientar a proxima etapa.
+## Uso
+
+Antes de enviar dados reais, rode o modo dry-run para revisar os payloads:
+
+```bash
+python -m src.submit_nao_agendados --dry-run
+python -m src.submit_finalizados --dry-run
+python -m src.submit_faltas_sem_resposta --dry-run
+```
+
+Para enviar ao Google Forms, execute sem `--dry-run` e confirme digitando
+`ENVIAR` quando solicitado:
+
+```bash
+python -m src.submit_nao_agendados
+python -m src.submit_finalizados
+python -m src.submit_faltas_sem_resposta
+```
+
+O fluxo de faltas sem resposta envia os alunos da aba `SHEET_FALTAS` com
+`status = "Falta"` e `motivo_falta = "Sem resposta"`, permitindo ajuste manual
+posterior no Forms ou na planilha caso o aluno responda pelo WhatsApp.
