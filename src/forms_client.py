@@ -57,6 +57,7 @@ COURSE_ENTRY_IDS = {
     "Framework Full Stack para Web": ENTRY_IDS["modulo_4"],
     "Teste de Software para Web": ENTRY_IDS["modulo_4"],
     "Teste de Software para Mobile": ENTRY_IDS["modulo_4"],
+    "Não consumiu": ENTRY_IDS["nao_consumiu"],
     "Não assistiu": ENTRY_IDS["nao_consumiu"],
     "Desafio Final": ENTRY_IDS["nao_consumiu"],
 }
