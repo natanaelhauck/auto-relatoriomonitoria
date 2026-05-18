@@ -17,8 +17,28 @@ FORM_VIEW_URL = (
     "1FAIpQLScqJcE8_wd3NrCdaP36TyotY8b9LMk1mRI6ceAZ8symajfz7g/viewform"
 )
 
+ACCEPTED_STATUS = {
+    "Presente",
+    "Falta",
+    "Aluno não agendado(Fantasma)",
+    "Aluno finalizou o curso",
+}
+
+ACCEPTED_MOTIVOS_FALTA = {
+    "Sem resposta",
+    "Trabalho ou Estudo",
+    "Questões Médicas",
+    "Viajando",
+    "Notebook com Suporte",
+    "Atraso/Compromisso",
+    "Reunião/Demanda (PD)",
+    "Troca de turno",
+    "Problema de Internet",
+    "Outro",
+}
+
 # TODO: If the Google Form is edited, reextract these entry IDs from the form HTML.
-ENTRY_IDS = {
+FORM_FIELDS = {
     "nome": "entry.615656428",
     "matricula": "entry.531507362",
     "data": "entry.1496596961",
@@ -35,31 +55,61 @@ ENTRY_IDS = {
     "modulo_4": "entry.1513577166",
 }
 
-COURSE_ENTRY_IDS = {
-    "Scratch": ENTRY_IDS["modulo_1"],
-    "No Code": ENTRY_IDS["modulo_1"],
-    "Introdução à Web": ENTRY_IDS["modulo_1"],
-    "Linux": ENTRY_IDS["modulo_1"],
-    "Python I": ENTRY_IDS["modulo_1"],
-    "JavaScript": ENTRY_IDS["modulo_2"],
-    "Banco de Dados": ENTRY_IDS["modulo_2"],
-    "Programação Orientada a Objetos": ENTRY_IDS["modulo_2"],
-    "Python II": ENTRY_IDS["modulo_2"],
-    "Fundamentos de interface": ENTRY_IDS["modulo_3"],
-    "Desenvolvimento de websites com mentalidade ágil": ENTRY_IDS["modulo_3"],
-    "Desenvolvimento de Interfaces Web Frameworks Front-End": ENTRY_IDS["modulo_3"],
-    "React JS": ENTRY_IDS["modulo_3"],
-    "Programação Multiplataforma com React Native": ENTRY_IDS["modulo_3"],
-    "Programação Multiplataforma com Flutter": ENTRY_IDS["modulo_3"],
-    "Padrão de Projeto de Software": ENTRY_IDS["modulo_4"],
-    "Desenvolvimento de APIs RESTful": ENTRY_IDS["modulo_4"],
-    "Desenvolvimento Nativo para Android": ENTRY_IDS["modulo_4"],
-    "Framework Full Stack para Web": ENTRY_IDS["modulo_4"],
-    "Teste de Software para Web": ENTRY_IDS["modulo_4"],
-    "Teste de Software para Mobile": ENTRY_IDS["modulo_4"],
-    "Não consumiu": ENTRY_IDS["nao_consumiu"],
-    "Não assistiu": ENTRY_IDS["nao_consumiu"],
-    "Desafio Final": ENTRY_IDS["nao_consumiu"],
+COURSE_FIELDS = {
+    "Scratch": (FORM_FIELDS["modulo_1"], "Scratch"),
+    "No Code": (FORM_FIELDS["modulo_1"], "No Code"),
+    "Introdução à Web": (FORM_FIELDS["modulo_1"], "Introdução à Web"),
+    "Linux": (FORM_FIELDS["modulo_1"], "Linux"),
+    "Python I": (FORM_FIELDS["modulo_1"], "Python I"),
+    "JavaScript": (FORM_FIELDS["modulo_2"], "JavaScript"),
+    "Banco de Dados": (FORM_FIELDS["modulo_2"], "Banco de Dados"),
+    "Programação Orientada a Objetos": (
+        FORM_FIELDS["modulo_2"],
+        "Programação Orientada a Objetos",
+    ),
+    "Python II": (FORM_FIELDS["modulo_2"], "Python II"),
+    "Fundamentos de interface": (FORM_FIELDS["modulo_3"], "Fundamentos de interface"),
+    "Desenvolvimento de websites com mentalidade ágil": (
+        FORM_FIELDS["modulo_3"],
+        "Desenvolvimento de websites com mentalidade ágil",
+    ),
+    "Desenvolvimento de Interfaces Web Frameworks Front-End": (
+        FORM_FIELDS["modulo_3"],
+        "Desenvolvimento de Interfaces Web Frameworks Front-End",
+    ),
+    "React JS": (FORM_FIELDS["modulo_3"], "React JS"),
+    "Programação Multiplataforma com React Native": (
+        FORM_FIELDS["modulo_3"],
+        "Programação Multiplataforma com React Native",
+    ),
+    "Programação Multiplataforma com Flutter": (
+        FORM_FIELDS["modulo_3"],
+        "Programação Multiplataforma com Flutter",
+    ),
+    "Padrão de Projeto de Software": (
+        FORM_FIELDS["modulo_4"],
+        "Padrão de Projeto de Software",
+    ),
+    "Desenvolvimento de APIs RESTful": (
+        FORM_FIELDS["modulo_4"],
+        "Desenvolvimento de APIs RESTful",
+    ),
+    "Desenvolvimento Nativo para Android": (
+        FORM_FIELDS["modulo_4"],
+        "Desenvolvimento Nativo para Android",
+    ),
+    "Framework Full Stack para Web": (
+        FORM_FIELDS["modulo_4"],
+        "Framework Full Stack para Web",
+    ),
+    "Teste de Software para Web": (FORM_FIELDS["modulo_4"], "Teste de Software para Web"),
+    "Teste de Software para Mobile": (
+        FORM_FIELDS["modulo_4"],
+        "Teste de Software para Mobile",
+    ),
+    "Não consumiu": (FORM_FIELDS["nao_consumiu"], "Não assistiu"),
+    "Não assistiu": (FORM_FIELDS["nao_consumiu"], "Não assistiu"),
+    "Desafio Final": (FORM_FIELDS["nao_consumiu"], "Desafio Final"),
 }
 
 
@@ -82,7 +132,7 @@ def submit_monitoria(payload: MonitoriaPayload) -> requests.Response:
 
     form_url = os.getenv("FORM_URL", FORM_VIEW_URL).strip() or FORM_VIEW_URL
     response_url = view_to_form_response(form_url)
-    form_data = _payload_to_form_data(payload)
+    form_data = build_form_data(payload)
 
     return requests.post(
         response_url,
@@ -92,29 +142,71 @@ def submit_monitoria(payload: MonitoriaPayload) -> requests.Response:
     )
 
 
-def _payload_to_form_data(payload: MonitoriaPayload) -> list[tuple[str, str]]:
+def build_form_data(payload: MonitoriaPayload) -> list[tuple[str, str]]:
+    """Validate and convert a monitoria payload to Google Forms fields."""
+    validated_payload = _validate_payload(payload)
     form_data = [
-        (ENTRY_IDS["nome"], payload.nome),
-        (ENTRY_IDS["matricula"], payload.matricula),
-        (ENTRY_IDS["agente"], payload.agente),
-        (ENTRY_IDS["status"], payload.status),
+        (FORM_FIELDS["nome"], validated_payload.nome.strip()),
+        (FORM_FIELDS["matricula"], validated_payload.matricula.strip()),
+        (FORM_FIELDS["agente"], validated_payload.agente.strip()),
+        (FORM_FIELDS["status"], validated_payload.status.strip()),
         ("fvv", "1"),
         ("pageHistory", "0"),
     ]
 
-    form_data.extend(_date_fields(payload.data))
-    form_data.extend(_optional_field(ENTRY_IDS["relatorio_readia"], payload.relatorio_readia))
-    form_data.extend(_optional_field(ENTRY_IDS["link_readia"], payload.link_readia))
-    form_data.extend(_optional_field(ENTRY_IDS["motivo_falta"], payload.motivo_falta))
-    form_data.extend(_optional_field(ENTRY_IDS["outro_motivo"], payload.outro_motivo))
-    form_data.extend(_course_fields(payload.cursos_consumidos))
+    form_data.extend(_date_fields(validated_payload.data))
+
+    if validated_payload.status == "Falta":
+        form_data.append((FORM_FIELDS["motivo_falta"], validated_payload.motivo_falta or "Sem resposta"))
+        form_data.extend(_optional_field(FORM_FIELDS["outro_motivo"], validated_payload.outro_motivo))
+
+    if validated_payload.status == "Presente":
+        form_data.extend(
+            _optional_field(FORM_FIELDS["relatorio_readia"], validated_payload.relatorio_readia)
+        )
+        form_data.extend(_optional_field(FORM_FIELDS["link_readia"], validated_payload.link_readia))
+        form_data.extend(_course_fields(validated_payload.cursos_consumidos))
 
     return form_data
 
 
+def _validate_payload(payload: MonitoriaPayload) -> MonitoriaPayload:
+    _require_text(payload.nome, "nome")
+    _require_text(payload.matricula, "matricula")
+    _require_text(payload.data, "data")
+    _require_text(payload.agente, "agente")
+    _require_text(payload.status, "status")
+
+    if payload.status not in ACCEPTED_STATUS:
+        raise ValueError(f"Status inválido: {payload.status}")
+
+    datetime.strptime(payload.data, "%Y-%m-%d")
+
+    if payload.status == "Falta":
+        motivo_falta = payload.motivo_falta or "Sem resposta"
+        if motivo_falta not in ACCEPTED_MOTIVOS_FALTA:
+            raise ValueError(f"Motivo de falta inválido: {motivo_falta}")
+        return MonitoriaPayload(
+            nome=payload.nome,
+            matricula=payload.matricula,
+            data=payload.data,
+            agente=payload.agente,
+            status=payload.status,
+            motivo_falta=motivo_falta,
+            outro_motivo=payload.outro_motivo,
+        )
+
+    return payload
+
+
+def _require_text(value: str | None, field_name: str) -> None:
+    if value is None or not str(value).strip():
+        raise ValueError(f"Campo obrigatório ausente: {field_name}")
+
+
 def _date_fields(value: str) -> list[tuple[str, str]]:
     date_value = datetime.strptime(value, "%Y-%m-%d").date()
-    entry_id = ENTRY_IDS["data"]
+    entry_id = FORM_FIELDS["data"]
 
     return [
         (f"{entry_id}_year", str(date_value.year)),
@@ -133,9 +225,9 @@ def _course_fields(cursos_consumidos: Iterable[str]) -> list[tuple[str, str]]:
     fields: list[tuple[str, str]] = []
 
     for course in cursos_consumidos:
-        entry_id = COURSE_ENTRY_IDS.get(course)
-        if entry_id is None:
+        course_field = COURSE_FIELDS.get(course)
+        if course_field is None:
             raise ValueError(f"Curso sem entry ID configurado: {course}")
-        fields.append((entry_id, course))
+        fields.append(course_field)
 
     return fields

@@ -1,36 +1,48 @@
 # Automacao de Relatorios de Monitoria
 
 Projeto Python para enviar relatorios de monitoria ao Google Forms a partir de
-dados organizados em planilhas. A estrutura tambem reserva os pontos de entrada
-para uma integracao futura com Read IA.
+dados organizados em planilhas. A estrutura tambem reserva pontos de entrada
+para integracao com Read IA.
 
 ## Objetivo
 
 - Ler dados de planilhas de acompanhamento.
-- Normalizar os registros por tipo de relatorio.
-- Enviar os relatorios ao Google Forms.
-- Receber e processar dados do Read IA em uma etapa futura.
+- Normalizar registros por tipo de relatorio.
+- Enviar relatorios ao Google Forms.
+- Receber payloads do Read IA para preparar envios de presenca.
 
 ## Estrutura
 
-- `src/config.py`: configuracoes e carregamento de ambiente.
-- `src/sheets_client.py`: leitura de planilhas.
-- `src/forms_client.py`: envio ao Google Forms.
-- `src/models.py`: modelos compartilhados.
-- `src/normalizers.py`: normalizacao dos dados de entrada.
+- `src/sheets_client.py`: leitura de planilhas Google Sheets.
+- `src/forms_client.py`: validacao e envio HTTP ao Google Forms.
+- `src/submission_runner.py`: execucao em lote, confirmacao e logs CSV.
+- `src/inspect_form.py`: inspecao dos `entry.*` do formulario.
 - `src/submit_*.py`: fluxos de envio por tipo de relatorio.
-- `src/webhook_readia.py`: entrada futura para webhooks do Read IA.
-- `data/`: arquivos locais de trabalho nao versionados.
+- `src/webhook_readia.py`: endpoint Flask para payloads do Read IA.
+- `data/submission_logs/`: logs CSV locais de execucoes reais.
 
-## Como preparar
+## Preparacao
 
-1. Criar e ativar um ambiente virtual.
-2. Instalar dependencias com `pip install -r requirements.txt`.
-3. Configurar credenciais e variaveis locais em arquivos nao versionados.
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-## Uso
+Copie `.env.example` para `.env`, preencha `GOOGLE_SPREADSHEET_ID` e coloque a
+credencial da service account em `credentials/google-service-account.json`.
 
-Antes de enviar dados reais, rode o modo dry-run para revisar os payloads:
+## Inspecionar o formulario
+
+Use o inspetor quando o Google Forms mudar e for necessario revisar os entry IDs:
+
+```bash
+python -m src.inspect_form
+```
+
+## Dry-run
+
+Antes de enviar dados reais, revise os payloads:
 
 ```bash
 python -m src.submit_nao_agendados --dry-run
@@ -38,8 +50,9 @@ python -m src.submit_finalizados --dry-run
 python -m src.submit_faltas_sem_resposta --dry-run
 ```
 
-Para enviar ao Google Forms, execute sem `--dry-run` e confirme digitando
-`ENVIAR` quando solicitado:
+## Envio real
+
+Execute sem `--dry-run` e confirme digitando exatamente `ENVIAR`:
 
 ```bash
 python -m src.submit_nao_agendados
@@ -47,6 +60,6 @@ python -m src.submit_finalizados
 python -m src.submit_faltas_sem_resposta
 ```
 
-O fluxo de faltas sem resposta envia os alunos da aba `SHEET_FALTAS` com
-`status = "Falta"` e `motivo_falta = "Sem resposta"`, permitindo ajuste manual
-posterior no Forms ou na planilha caso o aluno responda pelo WhatsApp.
+Cada execucao real gera um CSV em `data/submission_logs/` com o resultado por
+aluno. Esses logs ajudam a identificar duplicidades, mas ainda nao bloqueiam
+envios repetidos.
