@@ -106,8 +106,10 @@ envios repetidos.
 ## Envio Semanal
 
 O envio semanal combina os alunos de `SHEET_NAO_AGENDADOS` e
-`SHEET_FINALIZADOS`, usa a data atual em `America/Sao_Paulo` e pula registros
-que ja tenham log de envio com a mesma matricula, data e status.
+`SHEET_FINALIZADOS`, usa a data atual em `America/Sao_Paulo` e evita
+duplicidade automaticamente. Antes de enviar, ele consulta os CSVs em
+`data/submission_logs/` e pula registros que ja tenham envio com a mesma
+matricula, o mesmo status, a mesma semana ISO e o mesmo ano ISO.
 
 ```bash
 python -m src.weekly_auto_submit --dry-run

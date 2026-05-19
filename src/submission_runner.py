@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+from src.date_utils import get_iso_week_info
 from src.forms_client import submit_monitoria
 from src.models import MonitoriaPayload
 from src.sheets_client import read_sheet_rows
@@ -156,7 +157,7 @@ def run_prepared_batch(
             skipped_count += 1
             print(
                 f"PULADO - {payload.nome} - {payload.matricula} "
-                "- já enviado nesta data/status"
+                "- já enviado nesta semana/status"
             )
             continue
         payloads_to_send.append(payload)
@@ -199,6 +200,8 @@ def run_prepared_batch(
                 "nome",
                 "matricula",
                 "data",
+                "iso_year",
+                "iso_week",
                 "agente",
                 "status",
                 "resultado",
@@ -358,32 +361,54 @@ def _send_payload(
     return "ERRO", f"HTTP {response.status_code}: {response.text[:200]}"
 
 
-def load_existing_submission_keys(log_dir: Path = SUBMISSION_LOG_DIR) -> set[tuple[str, str, str]]:
+def load_existing_submission_keys(log_dir: Path = SUBMISSION_LOG_DIR) -> set[tuple[str, str, int, int]]:
     """Load successful submission keys from previous CSV logs."""
     if not log_dir.exists():
         return set()
 
-    keys: set[tuple[str, str, str]] = set()
+    keys: set[tuple[str, str, int, int]] = set()
     for path in log_dir.glob("*.csv"):
         try:
             with path.open(newline="", encoding="utf-8") as log_file:
                 for row in csv.DictReader(log_file):
                     if row.get("resultado") == "OK":
-                        keys.add(
-                            (
-                                str(row.get("matricula", "")).strip().casefold(),
-                                str(row.get("data", "")).strip(),
-                                str(row.get("status", "")).strip(),
-                            )
-                        )
+                        key = _log_row_key(row)
+                        if key is not None:
+                            keys.add(key)
         except OSError:
             continue
 
     return keys
 
 
-def _payload_key(payload: MonitoriaPayload) -> tuple[str, str, str]:
-    return (payload.matricula.strip().casefold(), payload.data, payload.status.strip())
+def _log_row_key(row: dict[str, str]) -> tuple[str, str, int, int] | None:
+    matricula = str(row.get("matricula", "")).strip().casefold()
+    status = str(row.get("status", "")).strip()
+    if not matricula or not status:
+        return None
+
+    try:
+        if row.get("iso_year") and row.get("iso_week"):
+            iso_year = int(str(row["iso_year"]).strip())
+            iso_week = int(str(row["iso_week"]).strip())
+        else:
+            week_info = get_iso_week_info(str(row.get("data", "")).strip())
+            iso_year = week_info["iso_year"]
+            iso_week = week_info["iso_week"]
+    except (ValueError, KeyError):
+        return None
+
+    return (matricula, status, iso_year, iso_week)
+
+
+def _payload_key(payload: MonitoriaPayload) -> tuple[str, str, int, int]:
+    week_info = get_iso_week_info(payload.data)
+    return (
+        payload.matricula.strip().casefold(),
+        payload.status.strip(),
+        week_info["iso_year"],
+        week_info["iso_week"],
+    )
 
 
 def _new_submission_log_path(log_dir: Path = SUBMISSION_LOG_DIR) -> Path:
@@ -393,11 +418,14 @@ def _new_submission_log_path(log_dir: Path = SUBMISSION_LOG_DIR) -> Path:
 
 
 def _log_row(payload: MonitoriaPayload, resultado: str, detalhe: str) -> dict[str, str]:
+    week_info = get_iso_week_info(payload.data)
     return {
         "timestamp": datetime.now(SAO_PAULO_TZ).isoformat(),
         "nome": payload.nome,
         "matricula": payload.matricula,
         "data": payload.data,
+        "iso_year": str(week_info["iso_year"]),
+        "iso_week": str(week_info["iso_week"]),
         "agente": payload.agente,
         "status": payload.status,
         "resultado": resultado,
