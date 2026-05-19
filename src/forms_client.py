@@ -44,72 +44,80 @@ FORM_FIELDS = {
     "data": "entry.1496596961",
     "agente": "entry.1608308280",
     "status": "entry.5905294",
-    "motivo_falta": "entry.714327850",
-    "outro_motivo": "entry.1096396211",
     "relatorio_readia": "entry.1761763556",
     "link_readia": "entry.1753304014",
-    "nao_consumiu": "entry.489293306",
-    "modulo_1": "entry.362814364",
-    "modulo_2": "entry.831821133",
-    "modulo_3": "entry.1947309664",
-    "modulo_4": "entry.1513577166",
+    "motivo_falta": "entry.714327850",
+    "outro_motivo": "entry.1096396211",
+    "cursos_consumidos": {
+        "nao_consumiu": "entry.489293306",
+        "modulo_1": "entry.362814364",
+        "modulo_2": "entry.831821133",
+        "modulo_3": "entry.1947309664",
+        "modulo_4": "entry.1513577166",
+    },
 }
 
 COURSE_FIELDS = {
-    "Scratch": (FORM_FIELDS["modulo_1"], "Scratch"),
-    "No Code": (FORM_FIELDS["modulo_1"], "No Code"),
-    "Introdução à Web": (FORM_FIELDS["modulo_1"], "Introdução à Web"),
-    "Linux": (FORM_FIELDS["modulo_1"], "Linux"),
-    "Python I": (FORM_FIELDS["modulo_1"], "Python I"),
-    "JavaScript": (FORM_FIELDS["modulo_2"], "JavaScript"),
-    "Banco de Dados": (FORM_FIELDS["modulo_2"], "Banco de Dados"),
+    "Scratch": (FORM_FIELDS["cursos_consumidos"]["modulo_1"], "Scratch"),
+    "No Code": (FORM_FIELDS["cursos_consumidos"]["modulo_1"], "No Code"),
+    "Introdução à Web": (FORM_FIELDS["cursos_consumidos"]["modulo_1"], "Introdução à Web"),
+    "Linux": (FORM_FIELDS["cursos_consumidos"]["modulo_1"], "Linux"),
+    "Python I": (FORM_FIELDS["cursos_consumidos"]["modulo_1"], "Python I"),
+    "JavaScript": (FORM_FIELDS["cursos_consumidos"]["modulo_2"], "JavaScript"),
+    "Banco de Dados": (FORM_FIELDS["cursos_consumidos"]["modulo_2"], "Banco de Dados"),
     "Programação Orientada a Objetos": (
-        FORM_FIELDS["modulo_2"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_2"],
         "Programação Orientada a Objetos",
     ),
-    "Python II": (FORM_FIELDS["modulo_2"], "Python II"),
-    "Fundamentos de interface": (FORM_FIELDS["modulo_3"], "Fundamentos de interface"),
+    "Python II": (FORM_FIELDS["cursos_consumidos"]["modulo_2"], "Python II"),
+    "Fundamentos de interface": (
+        FORM_FIELDS["cursos_consumidos"]["modulo_3"],
+        "Fundamentos de interface",
+    ),
     "Desenvolvimento de websites com mentalidade ágil": (
-        FORM_FIELDS["modulo_3"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_3"],
         "Desenvolvimento de websites com mentalidade ágil",
     ),
     "Desenvolvimento de Interfaces Web Frameworks Front-End": (
-        FORM_FIELDS["modulo_3"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_3"],
         "Desenvolvimento de Interfaces Web Frameworks Front-End",
     ),
-    "React JS": (FORM_FIELDS["modulo_3"], "React JS"),
+    "React JS": (FORM_FIELDS["cursos_consumidos"]["modulo_3"], "React JS"),
     "Programação Multiplataforma com React Native": (
-        FORM_FIELDS["modulo_3"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_3"],
         "Programação Multiplataforma com React Native",
     ),
     "Programação Multiplataforma com Flutter": (
-        FORM_FIELDS["modulo_3"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_3"],
         "Programação Multiplataforma com Flutter",
     ),
     "Padrão de Projeto de Software": (
-        FORM_FIELDS["modulo_4"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_4"],
         "Padrão de Projeto de Software",
     ),
     "Desenvolvimento de APIs RESTful": (
-        FORM_FIELDS["modulo_4"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_4"],
         "Desenvolvimento de APIs RESTful",
     ),
     "Desenvolvimento Nativo para Android": (
-        FORM_FIELDS["modulo_4"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_4"],
         "Desenvolvimento Nativo para Android",
     ),
     "Framework Full Stack para Web": (
-        FORM_FIELDS["modulo_4"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_4"],
         "Framework Full Stack para Web",
     ),
-    "Teste de Software para Web": (FORM_FIELDS["modulo_4"], "Teste de Software para Web"),
+    "Teste de Software para Web": (
+        FORM_FIELDS["cursos_consumidos"]["modulo_4"],
+        "Teste de Software para Web",
+    ),
     "Teste de Software para Mobile": (
-        FORM_FIELDS["modulo_4"],
+        FORM_FIELDS["cursos_consumidos"]["modulo_4"],
         "Teste de Software para Mobile",
     ),
-    "Não consumiu": (FORM_FIELDS["nao_consumiu"], "Não assistiu"),
-    "Não assistiu": (FORM_FIELDS["nao_consumiu"], "Não assistiu"),
-    "Desafio Final": (FORM_FIELDS["nao_consumiu"], "Desafio Final"),
+    "Não consumiu": (FORM_FIELDS["cursos_consumidos"]["nao_consumiu"], "Não assistiu"),
+    "Não assistiu": (FORM_FIELDS["cursos_consumidos"]["nao_consumiu"], "Não assistiu"),
+    "Desafio Final": (FORM_FIELDS["cursos_consumidos"]["nao_consumiu"], "Desafio Final"),
 }
 
 
@@ -157,8 +165,12 @@ def build_form_data(payload: MonitoriaPayload) -> list[tuple[str, str]]:
     form_data.extend(_date_fields(validated_payload.data))
 
     if validated_payload.status == "Falta":
-        form_data.append((FORM_FIELDS["motivo_falta"], validated_payload.motivo_falta or "Sem resposta"))
-        form_data.extend(_optional_field(FORM_FIELDS["outro_motivo"], validated_payload.outro_motivo))
+        form_data.append(
+            (FORM_FIELDS["motivo_falta"], validated_payload.motivo_falta or "Sem resposta")
+        )
+        form_data.extend(
+            _optional_field(FORM_FIELDS["outro_motivo"], validated_payload.outro_motivo)
+        )
 
     if validated_payload.status == "Presente":
         form_data.extend(

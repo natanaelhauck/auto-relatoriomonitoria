@@ -9,6 +9,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from google.oauth2 import service_account
+from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 
 SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
@@ -36,7 +37,7 @@ class SheetsSettings:
     default_agente: str
 
 
-def read_sheet_rows(sheet_name: str) -> list[dict[str, Any]]:
+def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> list[dict[str, Any]]:
     """Read and normalize rows from a Google Sheets tab.
 
     Configuration is loaded from `.env`:
@@ -54,7 +55,13 @@ def read_sheet_rows(sheet_name: str) -> list[dict[str, Any]]:
     settings = load_sheets_settings()
 
     service = _build_sheets_service(settings.service_account_file)
-    values = _get_sheet_values(service, settings.spreadsheet_id, sheet_name)
+    try:
+        values = _get_sheet_values(service, settings.spreadsheet_id, sheet_name)
+    except HttpError as exc:
+        if allow_missing_sheet and _is_missing_sheet_error(exc):
+            print(f"AVISO - aba nao encontrada no Google Sheets: {sheet_name}")
+            return []
+        raise
 
     if not values:
         return []
@@ -109,6 +116,10 @@ def _get_sheet_values(service: Any, spreadsheet_id: str, sheet_name: str) -> lis
         .execute()
     )
     return result.get("values", [])
+
+
+def _is_missing_sheet_error(exc: HttpError) -> bool:
+    return exc.resp.status == 400 and "Unable to parse range" in str(exc)
 
 
 def _normalize_row(

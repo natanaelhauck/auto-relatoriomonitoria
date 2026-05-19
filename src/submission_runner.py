@@ -43,7 +43,7 @@ def run_submission(
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
     """Read students from a sheet and submit each one to Google Forms."""
-    rows = read_sheet_rows(sheet_name)
+    rows = read_sheet_rows(sheet_name, allow_missing_sheet=dry_run)
     return run_batch(
         rows,
         status,
