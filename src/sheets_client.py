@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,14 @@ HEADER_ALIASES = {
     "pdita/pd": "matricula",
     "agente": "agente",
     "agente de sucesso": "agente",
+    "motivo": "motivo_falta",
+    "motivo da falta": "motivo_falta",
+    "motivo_falta": "motivo_falta",
+    "relatorio do read ia": "relatorio_readia",
+    "link do read ia": "link_readia",
+    "curso": "cursos_consumidos",
+    "cursos": "cursos_consumidos",
+    "curso ou cursos": "cursos_consumidos",
 }
 
 
@@ -36,6 +45,7 @@ class SheetsSettings:
     sheet_nao_agendados: str
     sheet_finalizados: str
     sheet_faltas: str
+    sheet_presentes: str
     default_agente: str
 
 
@@ -93,6 +103,7 @@ def load_sheets_settings() -> SheetsSettings:
         sheet_nao_agendados=_required_env("SHEET_NAO_AGENDADOS"),
         sheet_finalizados=_required_env("SHEET_FINALIZADOS"),
         sheet_faltas=_required_env("SHEET_FALTAS"),
+        sheet_presentes=os.getenv("SHEET_PRESENTES", "Presentes").strip() or "Presentes",
         default_agente=os.getenv("DEFAULT_AGENTE", "").strip(),
     )
 
@@ -172,7 +183,9 @@ def _normalize_header(header: Any) -> str | None:
 def _normalize_text(value: Any) -> str:
     text = str(value).strip().lower()
     text = unicodedata.normalize("NFKD", text)
-    return "".join(char for char in text if not unicodedata.combining(char))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = re.sub(r"\s+", " ", text)
+    return text
 
 
 def _clean_cell(value: Any) -> str:

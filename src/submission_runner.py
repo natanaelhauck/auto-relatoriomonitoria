@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import asdict
@@ -46,6 +47,11 @@ def build_parser(description: str) -> argparse.ArgumentParser:
         "--only-matricula",
         help="Processa apenas a matricula informada.",
     )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirma automaticamente o envio real. Use apenas em agendamentos.",
+    )
     return parser
 
 
@@ -59,6 +65,8 @@ def run_submission(
     limit: int | None = None,
     only_matricula: str | None = None,
     allow_missing_sheet: bool = False,
+    assume_yes: bool = False,
+    skip_existing: bool = False,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
     """Read students from a sheet and submit each one to Google Forms."""
@@ -74,6 +82,8 @@ def run_submission(
         report_date=report_date,
         limit=limit,
         only_matricula=only_matricula,
+        assume_yes=assume_yes,
+        skip_existing=skip_existing,
         submitter=submitter,
     )
 
@@ -87,6 +97,9 @@ def run_batch(
     report_date: str | None = None,
     limit: int | None = None,
     only_matricula: str | None = None,
+    assume_yes: bool = False,
+    skip_existing: bool = False,
+    log_dir: Path = SUBMISSION_LOG_DIR,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
     """Submit a batch of normalized student rows.
@@ -96,38 +109,86 @@ def run_batch(
     """
     filtered_rows = _filter_rows(rows, only_matricula=only_matricula)
     limited_rows = filtered_rows[:limit] if limit is not None else filtered_rows
-    payloads, ignored_rows = _build_payloads(
+    payloads, ignored_rows = build_payloads(
         limited_rows,
         status,
-        payload_defaults or {},
         report_date or _today_sao_paulo(),
+        payload_defaults=payload_defaults,
     )
 
-    print(f"Total de linhas lidas: {len(rows)}")
+    return run_prepared_batch(
+        payloads,
+        dry_run=dry_run,
+        total_rows=len(rows),
+        ignored_rows=ignored_rows,
+        filtered_count=len(filtered_rows),
+        limit=limit,
+        only_matricula=only_matricula,
+        assume_yes=assume_yes,
+        skip_existing=skip_existing,
+        log_dir=log_dir,
+        submitter=submitter,
+    )
+
+
+def run_prepared_batch(
+    payloads: list[MonitoriaPayload],
+    *,
+    dry_run: bool,
+    total_rows: int,
+    ignored_rows: list[tuple[int, str]] | None = None,
+    filtered_count: int | None = None,
+    limit: int | None = None,
+    only_matricula: str | None = None,
+    assume_yes: bool = False,
+    skip_existing: bool = False,
+    log_dir: Path = SUBMISSION_LOG_DIR,
+    submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
+) -> int:
+    """Process already built payloads with optional duplicate skipping."""
+    ignored_rows = ignored_rows or []
+    existing_keys = load_existing_submission_keys(log_dir) if skip_existing else set()
+    payloads_to_send: list[MonitoriaPayload] = []
+    skipped_count = 0
+
+    for payload in payloads:
+        if _payload_key(payload) in existing_keys:
+            skipped_count += 1
+            print(
+                f"PULADO - {payload.nome} - {payload.matricula} "
+                "- já enviado nesta data/status"
+            )
+            continue
+        payloads_to_send.append(payload)
+
+    print(f"Total de linhas lidas: {total_rows}")
     if only_matricula:
         print(f"Filtro matricula: {only_matricula}")
     if limit is not None:
         print(f"Limite: {limit}")
     print(f"Total validas: {len(payloads)}")
-    print(f"Total ignoradas: {len(rows) - len(payloads)}")
+    print(f"Total ignoradas: {total_rows - len(payloads)}")
+    if skip_existing:
+        print(f"Total puladas por duplicidade: {skipped_count}")
 
     for row_number, reason in ignored_rows:
         print(f"IGNORADA - linha {row_number} - {reason}")
 
     if dry_run:
-        for payload in payloads:
+        for payload in payloads_to_send:
             print(f"[DRY-RUN] {asdict(payload)}")
         return 1 if ignored_rows else 0
 
-    if not payloads:
+    if not payloads_to_send:
         return 1 if ignored_rows else 0
 
-    confirmation = input("Digite exatamente ENVIAR para confirmar o envio: ").strip()
-    if confirmation != "ENVIAR":
-        print("Envio cancelado.")
-        return 1
+    if not assume_yes:
+        confirmation = input("Digite exatamente ENVIAR para confirmar o envio: ").strip()
+        if confirmation != "ENVIAR":
+            print("Envio cancelado.")
+            return 1
 
-    log_path = _new_submission_log_path()
+    log_path = _new_submission_log_path(log_dir)
     had_error = bool(ignored_rows)
 
     with log_path.open("w", newline="", encoding="utf-8") as log_file:
@@ -146,7 +207,7 @@ def run_batch(
         )
         writer.writeheader()
 
-        for payload in payloads:
+        for payload in payloads_to_send:
             resultado, detalhe = _send_payload(payload, submitter)
             writer.writerow(_log_row(payload, resultado, detalhe))
 
@@ -162,18 +223,19 @@ def run_batch(
     return 1 if had_error else 0
 
 
-def _build_payloads(
+def build_payloads(
     rows: list[dict[str, Any]],
     status: str,
-    payload_defaults: dict[str, Any],
     report_date: str,
+    *,
+    payload_defaults: dict[str, Any] | None = None,
 ) -> tuple[list[MonitoriaPayload], list[tuple[int, str]]]:
     payloads: list[MonitoriaPayload] = []
     ignored_rows: list[tuple[int, str]] = []
 
     for index, row in enumerate(rows, start=1):
         try:
-            payloads.append(_row_to_payload(row, status, payload_defaults, report_date))
+            payloads.append(_row_to_payload(row, status, payload_defaults or {}, report_date))
         except ValueError as exc:
             ignored_rows.append((index, str(exc)))
 
@@ -191,6 +253,7 @@ def _row_to_payload(
     nome = str(row.get("nome", "")).strip()
     matricula = str(row.get("matricula", "")).strip()
     agente = str(row.get("agente", "")).strip() or default_agente
+    extra_fields = _payload_extra_fields(row, payload_defaults)
 
     if not nome:
         raise ValueError("nome vazio")
@@ -203,8 +266,42 @@ def _row_to_payload(
         data=report_date,
         agente=agente,
         status=status,
-        **payload_defaults,
+        **extra_fields,
     )
+
+
+def _payload_extra_fields(
+    row: dict[str, Any],
+    payload_defaults: dict[str, Any],
+) -> dict[str, Any]:
+    extra_fields = dict(payload_defaults)
+
+    for field_name in (
+        "motivo_falta",
+        "outro_motivo",
+        "relatorio_readia",
+        "link_readia",
+    ):
+        value = str(row.get(field_name, "")).strip()
+        if value:
+            extra_fields[field_name] = value
+
+    cursos_consumidos = _parse_courses(row.get("cursos_consumidos"))
+    if cursos_consumidos:
+        extra_fields["cursos_consumidos"] = cursos_consumidos
+
+    return extra_fields
+
+
+def _parse_courses(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    text = str(value or "").strip()
+    if not text:
+        return []
+
+    return [course.strip() for course in re.split(r"[,;|\n]+", text) if course.strip()]
 
 
 def _filter_rows(
@@ -261,10 +358,38 @@ def _send_payload(
     return "ERRO", f"HTTP {response.status_code}: {response.text[:200]}"
 
 
-def _new_submission_log_path() -> Path:
-    SUBMISSION_LOG_DIR.mkdir(parents=True, exist_ok=True)
+def load_existing_submission_keys(log_dir: Path = SUBMISSION_LOG_DIR) -> set[tuple[str, str, str]]:
+    """Load successful submission keys from previous CSV logs."""
+    if not log_dir.exists():
+        return set()
+
+    keys: set[tuple[str, str, str]] = set()
+    for path in log_dir.glob("*.csv"):
+        try:
+            with path.open(newline="", encoding="utf-8") as log_file:
+                for row in csv.DictReader(log_file):
+                    if row.get("resultado") == "OK":
+                        keys.add(
+                            (
+                                str(row.get("matricula", "")).strip().casefold(),
+                                str(row.get("data", "")).strip(),
+                                str(row.get("status", "")).strip(),
+                            )
+                        )
+        except OSError:
+            continue
+
+    return keys
+
+
+def _payload_key(payload: MonitoriaPayload) -> tuple[str, str, str]:
+    return (payload.matricula.strip().casefold(), payload.data, payload.status.strip())
+
+
+def _new_submission_log_path(log_dir: Path = SUBMISSION_LOG_DIR) -> Path:
+    log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(SAO_PAULO_TZ).strftime("%Y%m%dT%H%M%S%z")
-    return SUBMISSION_LOG_DIR / f"{timestamp}.csv"
+    return log_dir / f"{timestamp}.csv"
 
 
 def _log_row(payload: MonitoriaPayload, resultado: str, detalhe: str) -> dict[str, str]:

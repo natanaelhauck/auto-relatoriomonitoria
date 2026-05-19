@@ -15,6 +15,7 @@ def submit_finalizados(
     report_date: str | None = None,
     limit: int | None = None,
     only_matricula: str | None = None,
+    assume_yes: bool = False,
 ) -> int:
     """Submit reports for completed sessions."""
     settings = load_sheets_settings()
@@ -25,6 +26,7 @@ def submit_finalizados(
         report_date=report_date,
         limit=limit,
         only_matricula=only_matricula,
+        assume_yes=assume_yes,
     )
 
 
@@ -38,6 +40,7 @@ def main() -> None:
             report_date=args.report_date,
             limit=args.limit,
             only_matricula=args.only_matricula,
+            assume_yes=args.yes,
         )
     )
 

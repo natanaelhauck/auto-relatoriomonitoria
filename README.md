@@ -38,6 +38,7 @@ Exemplo de abas no `.env`:
 SHEET_NAO_AGENDADOS=Em Análise
 SHEET_FINALIZADOS=Finalizaram
 SHEET_FALTAS=Faltas
+SHEET_PRESENTES=Presentes
 ```
 
 ## Inspecionar o formulario
@@ -101,3 +102,36 @@ envio real; a confirmação `ENVIAR` continua obrigatória.
 Cada execucao real gera um CSV em `data/submission_logs/` com o resultado por
 aluno. Esses logs ajudam a identificar duplicidades, mas ainda nao bloqueiam
 envios repetidos.
+
+## Envio Semanal
+
+O envio semanal combina os alunos de `SHEET_NAO_AGENDADOS` e
+`SHEET_FINALIZADOS`, usa a data atual em `America/Sao_Paulo` e pula registros
+que ja tenham log de envio com a mesma matricula, data e status.
+
+```bash
+python -m src.weekly_auto_submit --dry-run
+python -m src.weekly_auto_submit --limit 1 --dry-run
+python -m src.weekly_auto_submit --yes
+```
+
+Para envio retroativo semanal:
+
+```bash
+python -m src.weekly_auto_submit --date 2026-05-05 --dry-run
+```
+
+## Agendador do Windows
+
+Para rodar automaticamente toda sexta-feira as 15:00:
+
+1. Abra o Agendador de Tarefas do Windows.
+2. Selecione `Criar Tarefa Basica`.
+3. Escolha frequencia semanal.
+4. Marque sexta-feira.
+5. Defina o horario `15:00`.
+6. Em acao, escolha `Iniciar um programa`.
+7. Em programa, selecione o arquivo `scripts/run_weekly_auto_submit.bat`.
+
+O computador precisa estar ligado, conectado a internet e com acesso as
+credenciais configuradas no `.env`.
