@@ -32,6 +32,14 @@ pip install -r requirements.txt
 Copie `.env.example` para `.env`, preencha `GOOGLE_SPREADSHEET_ID` e coloque a
 credencial da service account em `credentials/google-service-account.json`.
 
+Exemplo de abas no `.env`:
+
+```env
+SHEET_NAO_AGENDADOS=Em Análise
+SHEET_FINALIZADOS=Finalizaram
+SHEET_FALTAS=Faltas
+```
+
 ## Inspecionar o formulario
 
 Use o inspetor quando o Google Forms mudar e for necessario revisar os entry IDs:

@@ -40,10 +40,14 @@ def run_submission(
     status: str,
     dry_run: bool,
     payload_defaults: dict[str, Any] | None = None,
+    allow_missing_sheet: bool = False,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
     """Read students from a sheet and submit each one to Google Forms."""
-    rows = read_sheet_rows(sheet_name, allow_missing_sheet=dry_run)
+    rows = read_sheet_rows(
+        sheet_name,
+        allow_missing_sheet=dry_run or allow_missing_sheet,
+    )
     return run_batch(
         rows,
         status,

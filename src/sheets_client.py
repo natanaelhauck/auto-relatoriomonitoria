@@ -20,6 +20,8 @@ HEADER_ALIASES = {
     "aluno": "nome",
     "matricula": "matricula",
     "ra": "matricula",
+    "pdita": "matricula",
+    "pdita/pd": "matricula",
     "agente": "agente",
     "agente de sucesso": "agente",
 }
@@ -63,13 +65,17 @@ def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> li
             return []
         raise
 
-    if not values:
+    header_index = _find_header_index(values)
+    if header_index is None:
         return []
 
-    headers = [_normalize_header(header) for header in values[0]]
+    headers = [_normalize_header(header) for header in values[header_index]]
     rows: list[dict[str, Any]] = []
 
-    for raw_row in values[1:]:
+    for raw_row in values[header_index + 1 :]:
+        if _is_empty_row(raw_row):
+            continue
+
         row = _normalize_row(headers, raw_row, settings.default_agente)
         if row.get("nome") and row.get("matricula"):
             rows.append(row)
@@ -120,6 +126,19 @@ def _get_sheet_values(service: Any, spreadsheet_id: str, sheet_name: str) -> lis
 
 def _is_missing_sheet_error(exc: HttpError) -> bool:
     return exc.resp.status == 400 and "Unable to parse range" in str(exc)
+
+
+def _find_header_index(values: list[list[Any]]) -> int | None:
+    for index, row in enumerate(values):
+        normalized_headers = [_normalize_header(cell) for cell in row]
+        if "nome" in normalized_headers:
+            return index
+
+    return None
+
+
+def _is_empty_row(row: list[Any]) -> bool:
+    return not any(_clean_cell(value) for value in row)
 
 
 def _normalize_row(

@@ -19,6 +19,7 @@ def submit_faltas_sem_resposta(dry_run: bool = False) -> int:
         status=STATUS_FALTA,
         dry_run=dry_run,
         payload_defaults={"motivo_falta": MOTIVO_SEM_RESPOSTA},
+        allow_missing_sheet=True,
     )
 
 
