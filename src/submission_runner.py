@@ -31,6 +31,21 @@ def build_parser(description: str) -> argparse.ArgumentParser:
         action="store_true",
         help="Mostra o que seria enviado sem submeter ao Google Forms.",
     )
+    parser.add_argument(
+        "--date",
+        dest="report_date",
+        type=parse_report_date,
+        help="Data do relatorio no formato YYYY-MM-DD. Padrao: hoje em America/Sao_Paulo.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=parse_positive_int,
+        help="Limita a quantidade de alunos processados.",
+    )
+    parser.add_argument(
+        "--only-matricula",
+        help="Processa apenas a matricula informada.",
+    )
     return parser
 
 
@@ -40,6 +55,9 @@ def run_submission(
     status: str,
     dry_run: bool,
     payload_defaults: dict[str, Any] | None = None,
+    report_date: str | None = None,
+    limit: int | None = None,
+    only_matricula: str | None = None,
     allow_missing_sheet: bool = False,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
@@ -53,6 +71,9 @@ def run_submission(
         status,
         dry_run,
         payload_defaults=payload_defaults,
+        report_date=report_date,
+        limit=limit,
+        only_matricula=only_matricula,
         submitter=submitter,
     )
 
@@ -63,6 +84,9 @@ def run_batch(
     dry_run: bool,
     *,
     payload_defaults: dict[str, Any] | None = None,
+    report_date: str | None = None,
+    limit: int | None = None,
+    only_matricula: str | None = None,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
     """Submit a batch of normalized student rows.
@@ -70,11 +94,22 @@ def run_batch(
     Returns:
         Exit code 0 when every valid row is processed successfully, otherwise 1.
     """
-    payloads, ignored_rows = _build_payloads(rows, status, payload_defaults or {})
+    filtered_rows = _filter_rows(rows, only_matricula=only_matricula)
+    limited_rows = filtered_rows[:limit] if limit is not None else filtered_rows
+    payloads, ignored_rows = _build_payloads(
+        limited_rows,
+        status,
+        payload_defaults or {},
+        report_date or _today_sao_paulo(),
+    )
 
     print(f"Total de linhas lidas: {len(rows)}")
+    if only_matricula:
+        print(f"Filtro matricula: {only_matricula}")
+    if limit is not None:
+        print(f"Limite: {limit}")
     print(f"Total validas: {len(payloads)}")
-    print(f"Total ignoradas: {len(ignored_rows)}")
+    print(f"Total ignoradas: {len(rows) - len(payloads)}")
 
     for row_number, reason in ignored_rows:
         print(f"IGNORADA - linha {row_number} - {reason}")
@@ -131,13 +166,14 @@ def _build_payloads(
     rows: list[dict[str, Any]],
     status: str,
     payload_defaults: dict[str, Any],
+    report_date: str,
 ) -> tuple[list[MonitoriaPayload], list[tuple[int, str]]]:
     payloads: list[MonitoriaPayload] = []
     ignored_rows: list[tuple[int, str]] = []
 
     for index, row in enumerate(rows, start=1):
         try:
-            payloads.append(_row_to_payload(row, status, payload_defaults))
+            payloads.append(_row_to_payload(row, status, payload_defaults, report_date))
         except ValueError as exc:
             ignored_rows.append((index, str(exc)))
 
@@ -148,6 +184,7 @@ def _row_to_payload(
     row: dict[str, Any],
     status: str,
     payload_defaults: dict[str, Any],
+    report_date: str,
 ) -> MonitoriaPayload:
     load_dotenv()
     default_agente = os.getenv("DEFAULT_AGENTE", "").strip()
@@ -163,11 +200,50 @@ def _row_to_payload(
     return MonitoriaPayload(
         nome=nome,
         matricula=matricula,
-        data=_today_sao_paulo(),
+        data=report_date,
         agente=agente,
         status=status,
         **payload_defaults,
     )
+
+
+def _filter_rows(
+    rows: list[dict[str, Any]],
+    *,
+    only_matricula: str | None,
+) -> list[dict[str, Any]]:
+    if not only_matricula:
+        return rows
+
+    wanted = only_matricula.strip().casefold()
+    return [
+        row
+        for row in rows
+        if str(row.get("matricula", "")).strip().casefold() == wanted
+    ]
+
+
+def parse_report_date(value: str) -> str:
+    """Validate and normalize a report date argument."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "data invalida; use o formato YYYY-MM-DD"
+        ) from exc
+
+
+def parse_positive_int(value: str) -> int:
+    """Validate a positive integer CLI argument."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("limit deve ser um inteiro positivo") from exc
+
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("limit deve ser um inteiro positivo")
+
+    return parsed
 
 
 def _send_payload(

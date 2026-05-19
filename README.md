@@ -58,6 +58,33 @@ python -m src.submit_finalizados --dry-run
 python -m src.submit_faltas_sem_resposta --dry-run
 ```
 
+Envio da semana atual, usando a data de hoje em `America/Sao_Paulo`:
+
+```bash
+python -m src.submit_nao_agendados --dry-run
+python -m src.submit_finalizados --dry-run
+```
+
+Envio retroativo, informando a data que deve ir para o Forms:
+
+```bash
+python -m src.submit_nao_agendados --date 2026-05-05 --dry-run
+python -m src.submit_finalizados --date 2026-05-05 --dry-run
+```
+
+Teste seguro com apenas 1 aluno:
+
+```bash
+python -m src.submit_nao_agendados --date 2026-05-05 --limit 1 --dry-run
+python -m src.submit_finalizados --date 2026-05-05 --limit 1 --dry-run
+```
+
+Teste por matrícula:
+
+```bash
+python -m src.submit_nao_agendados --date 2026-05-05 --only-matricula PDITA355 --dry-run
+```
+
 ## Envio real
 
 Execute sem `--dry-run` e confirme digitando exatamente `ENVIAR`:
@@ -67,6 +94,9 @@ python -m src.submit_nao_agendados
 python -m src.submit_finalizados
 python -m src.submit_faltas_sem_resposta
 ```
+
+Os mesmos argumentos `--date`, `--limit` e `--only-matricula` podem ser usados no
+envio real; a confirmação `ENVIAR` continua obrigatória.
 
 Cada execucao real gera um CSV em `data/submission_logs/` com o resultado por
 aluno. Esses logs ajudam a identificar duplicidades, mas ainda nao bloqueiam
