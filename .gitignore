@@ -7,6 +7,8 @@ credenciais.json
 google-service-account.json
 *.secret.json
 data/read_payloads/
+data/form_debug.html
+data/form_entries_found.json
 read_payloads/
 logs/
 *.log
