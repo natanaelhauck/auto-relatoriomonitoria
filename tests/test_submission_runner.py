@@ -224,6 +224,63 @@ def test_faltas_sem_motivo_usam_sem_resposta() -> None:
     assert payloads[0].motivo_falta == "Sem resposta"
 
 
+def test_faltas_com_motivo_mantem_valor() -> None:
+    payloads, ignored = build_payloads(
+        [
+            {
+                "nome": "Aluno Um",
+                "matricula": "PDITA001",
+                "agente": "Natanael",
+                "motivo_falta": "Questões Médicas",
+            }
+        ],
+        "Falta",
+        "2026-05-05",
+        payload_defaults={"motivo_falta": "Sem resposta"},
+    )
+
+    assert ignored == []
+    assert payloads[0].motivo_falta == "Questões Médicas"
+
+
+def test_faltas_aplicam_duplicidade_semanal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log_dir = _make_log_dir()
+    try:
+        _write_log(
+            log_dir,
+            matricula="PDITA001",
+            data="2026-05-04",
+            status="Falta",
+            iso_year="2026",
+            iso_week="19",
+        )
+        payloads, _ = build_payloads(
+            ROWS[:1],
+            "Falta",
+            "2026-05-08",
+            payload_defaults={"motivo_falta": "Sem resposta"},
+        )
+
+        exit_code = run_prepared_batch(
+            payloads,
+            dry_run=True,
+            total_rows=1,
+            skip_existing=True,
+            log_dir=log_dir,
+        )
+    finally:
+        shutil.rmtree(log_dir, ignore_errors=True)
+
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "PULADO - Aluno Um - PDITA001" in output
+    assert "Total puladas por duplicidade: 1" in output
+    assert "[DRY-RUN]" not in output
+
+
 def test_presentes_aceitam_relatorio_e_link_readia() -> None:
     payloads, ignored = build_payloads(
         [

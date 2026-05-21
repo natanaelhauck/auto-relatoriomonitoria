@@ -59,6 +59,47 @@ python -m src.submit_finalizados --dry-run
 python -m src.submit_faltas_sem_resposta --dry-run
 ```
 
+## Faltas
+
+O fluxo de faltas le a aba configurada em `SHEET_FALTAS` (por padrao,
+`Faltas`). Se a aba nao existir, o comando mostra um aviso e encerra com
+codigo 0.
+
+Estrutura esperada da aba:
+
+```text
+NOME | PDITA | Motivo da Falta
+```
+
+Tambem sao aceitos os cabecalhos `Motivo`, `Motivo da Falta` e
+`motivo_falta`. Quando o motivo estiver vazio, o envio usa `Sem resposta`.
+
+Motivos esperados:
+
+- Sem resposta
+- Trabalho ou Estudo
+- Questoes Medicas
+- Viajando
+- Notebook com Suporte
+- Atraso/Compromisso
+- Reuniao/Demanda (PD)
+- Troca de turno
+- Problema de Internet
+- Outro
+
+Exemplos:
+
+```bash
+python -m src.submit_faltas_sem_resposta --dry-run
+python -m src.submit_faltas_sem_resposta --date 2026-05-05 --dry-run
+python -m src.submit_faltas_sem_resposta --limit 1 --dry-run
+python -m src.submit_faltas_sem_resposta --only-matricula PDITA355 --dry-run
+```
+
+O fluxo de faltas consulta os CSVs em `data/submission_logs/` e pula registros
+ja enviados com a mesma matricula, o mesmo status, a mesma semana ISO e o mesmo
+ano ISO.
+
 Envio da semana atual, usando a data de hoje em `America/Sao_Paulo`:
 
 ```bash
@@ -100,8 +141,8 @@ Os mesmos argumentos `--date`, `--limit` e `--only-matricula` podem ser usados n
 envio real; a confirmação `ENVIAR` continua obrigatória.
 
 Cada execucao real gera um CSV em `data/submission_logs/` com o resultado por
-aluno. Esses logs ajudam a identificar duplicidades, mas ainda nao bloqueiam
-envios repetidos.
+aluno. Esses logs sao usados pelo envio semanal e pelo fluxo de faltas para
+evitar duplicidades por matricula, status e semana ISO.
 
 ## Envio Semanal
 

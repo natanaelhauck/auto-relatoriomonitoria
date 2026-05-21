@@ -1,4 +1,4 @@
-"""Submission flow for absences without response."""
+"""Submission flow for absence reports."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def submit_faltas_sem_resposta(
     only_matricula: str | None = None,
     assume_yes: bool = False,
 ) -> int:
-    """Submit absence reports using the default no-response reason."""
+    """Submit absence reports from the configured absences sheet."""
     settings = load_sheets_settings()
     return run_submission(
         sheet_name=settings.sheet_faltas,
@@ -30,12 +30,13 @@ def submit_faltas_sem_resposta(
         only_matricula=only_matricula,
         allow_missing_sheet=True,
         assume_yes=assume_yes,
+        skip_existing=True,
     )
 
 
 def main() -> None:
     """CLI entry point."""
-    parser = build_parser("Envia faltas sem resposta para o Google Forms.")
+    parser = build_parser("Envia faltas para o Google Forms.")
     args = parser.parse_args()
     sys.exit(
         submit_faltas_sem_resposta(
