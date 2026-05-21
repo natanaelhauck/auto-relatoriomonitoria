@@ -4,4 +4,5 @@ google-auth-oauthlib
 requests
 python-dotenv
 flask
+gunicorn
 pytest

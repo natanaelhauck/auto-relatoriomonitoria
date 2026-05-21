@@ -77,6 +77,28 @@ python -m src.inspect_readia_payloads
 Para o Read IA enviar dados para sua maquina local, sera necessario expor essa
 porta com ngrok ou hospedar o webhook em um servidor acessivel pela internet.
 
+## Deploy Render
+
+Crie um Web Service no Render e conecte o repositorio do GitHub.
+
+Build:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start:
+
+```bash
+gunicorn wsgi:app
+```
+
+Depois de publicado, valide o healthcheck:
+
+```text
+https://URL/health
+```
+
 ## Teste do Read IA com ngrok
 
 Execute:
