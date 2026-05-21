@@ -77,6 +77,32 @@ python -m src.inspect_readia_payloads
 Para o Read IA enviar dados para sua maquina local, sera necessario expor essa
 porta com ngrok ou hospedar o webhook em um servidor acessivel pela internet.
 
+## Teste do Read IA com ngrok
+
+Execute:
+
+```bash
+scripts/start_readia_webhook.bat
+```
+
+Pegue a URL gerada pelo ngrok:
+
+```text
+https://xxxx.ngrok-free.app
+```
+
+Configure no Read IA:
+
+```text
+https://xxxx.ngrok-free.app/read-webhook
+```
+
+Depois verifique os payloads recebidos:
+
+```bash
+python -m src.inspect_readia_payloads
+```
+
 ## Dry-run
 
 Antes de enviar dados reais, revise os payloads:
