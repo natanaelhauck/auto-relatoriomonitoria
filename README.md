@@ -49,6 +49,34 @@ Use o inspetor quando o Google Forms mudar e for necessario revisar os entry IDs
 python -m src.inspect_form
 ```
 
+## Webhook Read IA
+
+O webhook Flask recebe payloads do Read IA e salva os arquivos em
+`data/read_payloads/`. Os JSONs recebidos ficam ignorados pelo Git; apenas o
+`.gitkeep` da pasta e versionado.
+
+Para rodar localmente:
+
+```bash
+python -m src.webhook_readia
+```
+
+URLs locais:
+
+```text
+http://localhost:5000/read-webhook
+http://localhost:5000/health
+```
+
+Para testar os payloads salvos:
+
+```bash
+python -m src.inspect_readia_payloads
+```
+
+Para o Read IA enviar dados para sua maquina local, sera necessario expor essa
+porta com ngrok ou hospedar o webhook em um servidor acessivel pela internet.
+
 ## Dry-run
 
 Antes de enviar dados reais, revise os payloads:
