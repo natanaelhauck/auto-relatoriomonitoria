@@ -88,6 +88,7 @@ def normalize_readia_payload(document: Any) -> dict[str, Any]:
 
     return {
         "date": _extract_date(date_value) or _extract_date(received_at) or "",
+        "start_time": _clean_scalar(date_value),
         "title": _clean_scalar(title),
         "summary": _clean_scalar(summary),
         "report_url": _clean_scalar(report_url),
@@ -102,9 +103,31 @@ def match_student_to_meeting(
     meeting: dict[str, Any],
 ) -> MatchResult | None:
     """Match one active student to one normalized Read IA meeting."""
-    matricula = _normalize_identifier(student.get("matricula"))
-    email = _normalize_email(student.get("email"))
-    full_name = normalize_text(student.get("nome"))
+    return _match_subject_to_meeting(student, meeting)
+
+
+def match_calendar_event_to_meeting(
+    calendar_event: Mapping[str, Any],
+    meeting: dict[str, Any],
+) -> MatchResult | None:
+    """Match one parsed calendar event to one normalized Read IA meeting."""
+    return _match_subject_to_meeting(
+        calendar_event,
+        meeting,
+        calendar_start=str(calendar_event.get("calendar_start") or ""),
+    )
+
+
+def _match_subject_to_meeting(
+    subject: Mapping[str, Any],
+    meeting: dict[str, Any],
+    *,
+    calendar_start: str = "",
+) -> MatchResult | None:
+    """Match one student-like subject to one normalized Read IA meeting."""
+    matricula = _normalize_identifier(subject.get("matricula"))
+    email = _normalize_email(subject.get("email"))
+    full_name = normalize_text(subject.get("nome"))
     first_second_name = _first_second_name(full_name)
 
     title = normalize_text(meeting.get("title"))
@@ -135,7 +158,10 @@ def match_student_to_meeting(
         return MatchResult(80, "nome_completo_resumo", meeting)
 
     if first_second_name and first_second_name in summary_raw:
-        return MatchResult(65, "primeiro_segundo_nome_resumo", meeting)
+        return MatchResult(70, "primeiro_segundo_nome_resumo", meeting)
+
+    if _is_close_time(calendar_start, str(meeting.get("start_time") or "")):
+        return MatchResult(60, "horario_proximo", meeting)
 
     return None
 
@@ -149,6 +175,22 @@ def best_match_student_to_meetings(
         match
         for meeting in meetings
         if (match := match_student_to_meeting(student, meeting)) is not None
+    ]
+    if not matches:
+        return None
+
+    return max(matches, key=lambda match: match.confidence)
+
+
+def best_match_calendar_event_to_meetings(
+    calendar_event: Mapping[str, Any],
+    meetings: Sequence[dict[str, Any]],
+) -> MatchResult | None:
+    """Return the best Read IA match for a parsed calendar event."""
+    matches = [
+        match
+        for meeting in meetings
+        if (match := match_calendar_event_to_meeting(calendar_event, meeting)) is not None
     ]
     if not matches:
         return None
@@ -189,6 +231,36 @@ def _extract_date(value: Any) -> str:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
     except ValueError:
         return ""
+
+
+def _is_close_time(calendar_start: str, meeting_start: str) -> bool:
+    calendar_datetime = _parse_datetime(calendar_start)
+    meeting_datetime = _parse_datetime(meeting_start)
+    if calendar_datetime is None or meeting_datetime is None:
+        return False
+
+    if calendar_datetime.tzinfo is not None and meeting_datetime.tzinfo is not None:
+        delta_seconds = abs(calendar_datetime.timestamp() - meeting_datetime.timestamp())
+    else:
+        delta_seconds = abs(
+            (
+                calendar_datetime.replace(tzinfo=None)
+                - meeting_datetime.replace(tzinfo=None)
+            ).total_seconds()
+        )
+
+    return delta_seconds <= 30 * 60
+
+
+def _parse_datetime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text or "T" not in text:
+        return None
+
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _string_list(value: Any) -> list[str]:

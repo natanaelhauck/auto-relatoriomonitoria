@@ -32,9 +32,11 @@ pip install -r requirements.txt
 Copie `.env.example` para `.env`, preencha `GOOGLE_SPREADSHEET_ID` e coloque a
 credencial da service account em `credentials/google-service-account.json`.
 
-Exemplo de abas no `.env`:
+Exemplo de abas e agenda no `.env`:
 
 ```env
+GOOGLE_CALENDAR_ID=primary
+GOOGLE_CALENDAR_TIMEZONE=America/Sao_Paulo
 SHEET_NAO_AGENDADOS=Em Análise
 SHEET_FINALIZADOS=Finalizaram
 SHEET_FALTAS=Faltas
@@ -126,25 +128,50 @@ Depois verifique os payloads recebidos:
 python -m src.inspect_readia_payloads
 ```
 
+## Preview Diario Agenda + Read IA
+
+O fluxo diario de presenca/falta usa o Google Agenda como base do dia, nao a
+aba `Ativo`. Cada evento da agenda deve trazer nome e matricula no titulo, por
+exemplo:
+
+```text
+Octavio Augusto de Araujo Americo PDBD163 and Natanael Hauck
+```
+
+Gere um CSV de revisao cruzando os eventos da agenda com os payloads Read IA
+salvos em `data/read_payloads/`:
+
+```bash
+python -m src.preview_monitoria_agenda_do_dia --date 2026-05-21
+```
+
+O arquivo gerado fica em `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
+e classifica os eventos em:
+
+- `presentes_confirmados`: match com confianca 80 ou maior.
+- `matches_fracos`: match entre 60 e 79, exige revisao manual.
+- `faltas_candidatas`: evento agendado sem match confirmado no Read IA do dia.
+- `eventos_nao_parseados`: evento sem matricula reconhecivel no titulo.
+
+As regras mais fortes sao matricula encontrada no titulo/resumo/texto bruto do
+Read IA e nome completo encontrado no titulo do Read IA. Horario proximo ajuda
+na revisao, mas sozinho nao confirma presenca.
+
+A aba `Ativo` pode ser usada como apoio para completar dados cadastrais, mas nao
+e a base principal para gerar faltas do dia.
+
+Se usar service account, compartilhe a agenda configurada em
+`GOOGLE_CALENDAR_ID` com o e-mail dessa service account e habilite a Google
+Calendar API no projeto.
+
 ## Preview Diario Ativos + Read IA
 
-Antes de automatizar presencas e faltas, gere um CSV de revisao cruzando a aba
-`SHEET_ATIVOS` com os payloads Read IA salvos em `data/read_payloads/`.
+Este preview antigo cruza todos os alunos ativos com os payloads Read IA e serve
+apenas como apoio cadastral/revisao, nao como base principal de faltas.
 
 ```bash
 python -m src.preview_monitoria_do_dia --date 2026-05-21
 ```
-
-O arquivo gerado fica em `data/previews/preview_monitoria_YYYY-MM-DD.csv` e
-classifica os alunos em:
-
-- `presentes_confirmados`: match com confianca 80 ou maior.
-- `matches_fracos`: match entre 60 e 79, exige revisao manual.
-- `faltas_candidatas`: aluno ativo sem match confirmado no Read IA do dia.
-
-As regras mais fortes sao matricula encontrada no titulo/resumo/texto bruto e
-e-mail do aluno encontrado nos participantes. Matches por partes do nome sao
-tratados com mais cautela.
 
 ## Dry-run
 

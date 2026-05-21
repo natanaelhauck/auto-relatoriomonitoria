@@ -41,7 +41,7 @@ def test_primeiro_segundo_nome_no_titulo_gera_confianca_85() -> None:
     assert result.match_type == "primeiro_segundo_nome_titulo"
 
 
-def test_primeiro_segundo_nome_no_resumo_gera_match_fraco_65() -> None:
+def test_primeiro_segundo_nome_no_resumo_gera_match_fraco_70() -> None:
     result = match_student_to_meeting(
         _student(),
         _meeting(
@@ -51,7 +51,7 @@ def test_primeiro_segundo_nome_no_resumo_gera_match_fraco_65() -> None:
     )
 
     assert result is not None
-    assert result.confidence == 65
+    assert result.confidence == 70
     assert result.match_type == "primeiro_segundo_nome_resumo"
 
 
