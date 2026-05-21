@@ -39,6 +39,7 @@ SHEET_NAO_AGENDADOS=Em Análise
 SHEET_FINALIZADOS=Finalizaram
 SHEET_FALTAS=Faltas
 SHEET_PRESENTES=Presentes
+SHEET_ATIVOS=Ativo
 ```
 
 ## Inspecionar o formulario
@@ -124,6 +125,26 @@ Depois verifique os payloads recebidos:
 ```bash
 python -m src.inspect_readia_payloads
 ```
+
+## Preview Diario Ativos + Read IA
+
+Antes de automatizar presencas e faltas, gere um CSV de revisao cruzando a aba
+`SHEET_ATIVOS` com os payloads Read IA salvos em `data/read_payloads/`.
+
+```bash
+python -m src.preview_monitoria_do_dia --date 2026-05-21
+```
+
+O arquivo gerado fica em `data/previews/preview_monitoria_YYYY-MM-DD.csv` e
+classifica os alunos em:
+
+- `presentes_confirmados`: match com confianca 80 ou maior.
+- `matches_fracos`: match entre 60 e 79, exige revisao manual.
+- `faltas_candidatas`: aluno ativo sem match confirmado no Read IA do dia.
+
+As regras mais fortes sao matricula encontrada no titulo/resumo/texto bruto e
+e-mail do aluno encontrado nos participantes. Matches por partes do nome sao
+tratados com mais cautela.
 
 ## Dry-run
 

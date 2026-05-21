@@ -8,6 +8,8 @@ google-service-account.json
 *.secret.json
 data/read_payloads/*.json
 !data/read_payloads/.gitkeep
+data/previews/*.csv
+!data/previews/.gitkeep
 data/form_debug.html
 data/form_entries_found.json
 /read_payloads/

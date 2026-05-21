@@ -23,6 +23,10 @@ HEADER_ALIASES = {
     "ra": "matricula",
     "pdita": "matricula",
     "pdita/pd": "matricula",
+    "email": "email",
+    "e-mail": "email",
+    "email do aluno": "email",
+    "e-mail do aluno": "email",
     "agente": "agente",
     "agente de sucesso": "agente",
     "motivo": "motivo_falta",
@@ -46,6 +50,7 @@ class SheetsSettings:
     sheet_finalizados: str
     sheet_faltas: str
     sheet_presentes: str
+    sheet_ativos: str
     default_agente: str
 
 
@@ -104,6 +109,7 @@ def load_sheets_settings() -> SheetsSettings:
         sheet_finalizados=_required_env("SHEET_FINALIZADOS"),
         sheet_faltas=_required_env("SHEET_FALTAS"),
         sheet_presentes=os.getenv("SHEET_PRESENTES", "Presentes").strip() or "Presentes",
+        sheet_ativos=os.getenv("SHEET_ATIVOS", "Ativo").strip() or "Ativo",
         default_agente=os.getenv("DEFAULT_AGENTE", "").strip(),
     )
 
