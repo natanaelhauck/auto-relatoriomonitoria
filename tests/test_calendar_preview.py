@@ -150,8 +150,105 @@ def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> No
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Total eventos agenda: 1" in output
+    assert "Total payloads Read IA na planilha: 1" in output
+    assert "Total payloads Read IA filtrados pela data: 1" in output
     assert "Presentes confirmados: 1" in output
     assert f"Caminho CSV: {csv_path}" in output
+
+
+def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        agenda_preview,
+        "get_events_for_date",
+        lambda report_date: [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start=f"{report_date}T10:00:00-03:00",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        agenda_preview,
+        "read_readia_payload_rows",
+        lambda: [
+            {
+                "received_at": "2026-05-20T14:30:00-03:00",
+                "title": "Monitoria",
+                "payload_json": '{"notes": "Maria Silva Santos participou."}',
+            }
+        ],
+    )
+
+    preview_dir = Path("data/previews/test_calendar_preview_sem_data")
+    csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
+    try:
+        exit_code = agenda_preview.preview_monitoria_agenda_do_dia(
+            report_date="2026-05-21",
+            preview_dir=preview_dir,
+        )
+    finally:
+        if csv_path.exists():
+            csv_path.unlink()
+        if preview_dir.exists():
+            preview_dir.rmdir()
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Total payloads Read IA na planilha: 1" in output
+    assert "Total payloads Read IA filtrados pela data: 0" in output
+    assert "Existem payloads na planilha, mas nenhum para esta data." in output
+
+
+def test_preview_gera_csv_debug_quando_payloads_na_data_sem_presenca(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        agenda_preview,
+        "get_events_for_date",
+        lambda report_date: [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start=f"{report_date}T10:00:00-03:00",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        agenda_preview,
+        "read_readia_payload_rows",
+        lambda: [
+            {
+                "received_at": "2026-05-21T14:30:00-03:00",
+                "meeting_id": "meet-sem-match",
+                "title": "Monitoria de outro aluno",
+                "summary": "Sem dados do aluno.",
+                "payload_json": '{"notes": "Outro participante"}',
+            }
+        ],
+    )
+
+    preview_dir = Path("data/previews/test_calendar_preview_debug")
+    csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
+    debug_csv_path = preview_dir / "debug_readia_matches_2026-05-21.csv"
+    try:
+        exit_code = agenda_preview.preview_monitoria_agenda_do_dia(
+            report_date="2026-05-21",
+            preview_dir=preview_dir,
+        )
+        debug_content = debug_csv_path.read_text(encoding="utf-8")
+    finally:
+        if csv_path.exists():
+            csv_path.unlink()
+        if debug_csv_path.exists():
+            debug_csv_path.unlink()
+        if preview_dir.exists():
+            preview_dir.rmdir()
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert f"Caminho CSV debug: {debug_csv_path}" in output
+    assert "meet-sem-match" in debug_content
+    assert "sem_match" in debug_content
 
 
 def test_calendar_service_prioriza_json_da_service_account(monkeypatch) -> None:

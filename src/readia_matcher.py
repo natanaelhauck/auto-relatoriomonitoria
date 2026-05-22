@@ -106,6 +106,10 @@ def normalize_readia_payload(document: Any) -> dict[str, Any]:
         received_at = None
 
     title = _find_first(payload, ("title", "meeting_title"))
+    meeting_id = _find_first(
+        payload,
+        ("meeting_id", "meetingId", "session_id", "sessionId", "id"),
+    )
     summary = _find_first(payload, ("summary", "report_summary"))
     report_url = _find_first(payload, ("report_url", "url"))
     raw_text = _find_first(payload, ("raw_text",))
@@ -127,6 +131,8 @@ def normalize_readia_payload(document: Any) -> dict[str, Any]:
 
     return {
         "date": _extract_date(date_value) or _extract_date(received_at) or "",
+        "received_at": _clean_scalar(received_at),
+        "meeting_id": _clean_scalar(meeting_id),
         "start_time": _clean_scalar(date_value),
         "title": _clean_scalar(title),
         "summary": _clean_scalar(summary),
@@ -143,7 +149,8 @@ def match_student_to_meeting(
     meeting: dict[str, Any],
 ) -> MatchResult | None:
     """Match one active student to one normalized Read IA meeting."""
-    return _match_subject_to_meeting(student, meeting)
+    match = score_subject_to_meeting(student, meeting)
+    return match if match.confidence > 0 else None
 
 
 def match_calendar_event_to_meeting(
@@ -151,14 +158,23 @@ def match_calendar_event_to_meeting(
     meeting: dict[str, Any],
 ) -> MatchResult | None:
     """Match one parsed calendar event to one normalized Read IA meeting."""
-    return _match_subject_to_meeting(calendar_event, meeting)
+    match = score_calendar_event_to_meeting(calendar_event, meeting)
+    return match if match.confidence > 0 else None
 
 
-def _match_subject_to_meeting(
+def score_calendar_event_to_meeting(
+    calendar_event: Mapping[str, Any],
+    meeting: dict[str, Any],
+) -> MatchResult:
+    """Return the calculated score for one parsed calendar event and meeting."""
+    return score_subject_to_meeting(calendar_event, meeting)
+
+
+def score_subject_to_meeting(
     subject: Mapping[str, Any],
     meeting: dict[str, Any],
-) -> MatchResult | None:
-    """Match one student-like subject to one normalized Read IA meeting."""
+) -> MatchResult:
+    """Return the calculated score for one student-like subject and meeting."""
     matricula = _normalize_identifier(subject.get("matricula"))
     email = _normalize_email(subject.get("email"))
     full_name = normalize_text(subject.get("nome"))
@@ -195,10 +211,7 @@ def _match_subject_to_meeting(
         score += 15
         match_parts.append("primeiro_nome")
 
-    if score <= 0:
-        return None
-
-    return MatchResult(score, "+".join(match_parts), meeting)
+    return MatchResult(score, "+".join(match_parts) or "sem_match", meeting)
 
 
 def best_match_student_to_meetings(

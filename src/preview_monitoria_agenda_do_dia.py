@@ -12,6 +12,7 @@ from src.readia_matcher import (
     MatchResult,
     best_match_calendar_event_to_meetings,
     load_readia_meetings_from_sheet_rows,
+    score_calendar_event_to_meeting,
 )
 from src.sheets_client import read_readia_payload_rows
 from src.submission_runner import _today_sao_paulo, parse_report_date
@@ -31,6 +32,22 @@ CSV_FIELDS = [
     "readia_title",
     "readia_report_url",
     "observacao",
+]
+DEBUG_CSV_FIELDS = [
+    "data",
+    "nome",
+    "matricula",
+    "calendar_title",
+    "calendar_start",
+    "calendar_end",
+    "readia_date",
+    "readia_received_at",
+    "readia_meeting_id",
+    "readia_title",
+    "readia_summary",
+    "readia_report_url",
+    "score",
+    "match_type",
 ]
 
 
@@ -52,10 +69,22 @@ def preview_monitoria_agenda_do_dia(
     counts = _category_counts(rows)
 
     print(f"Total eventos agenda: {len(events)}")
+    print(f"Total payloads Read IA na planilha: {len(payload_rows)}")
+    print(f"Total payloads Read IA filtrados pela data: {len(meetings)}")
+    if payload_rows and not meetings:
+        print("Existem payloads na planilha, mas nenhum para esta data.")
     print(f"Presentes confirmados: {counts['presentes_confirmados']}")
     print(f"Matches fracos: {counts['matches_fracos']}")
     print(f"Faltas candidatas: {counts['faltas_candidatas']}")
     print(f"Caminho CSV: {csv_path}")
+    if meetings and counts["presentes_confirmados"] == 0:
+        debug_rows = build_debug_readia_match_rows(events, meetings, target_date)
+        debug_csv_path = write_debug_readia_matches_csv(
+            debug_rows,
+            target_date,
+            preview_dir=preview_dir,
+        )
+        print(f"Caminho CSV debug: {debug_csv_path}")
     return 0
 
 
@@ -92,6 +121,63 @@ def write_agenda_preview_csv(
     csv_path = preview_dir / f"preview_agenda_monitoria_{report_date}.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return csv_path
+
+
+def build_debug_readia_match_rows(
+    events: list[dict[str, Any]],
+    meetings: list[dict[str, Any]],
+    report_date: str,
+) -> list[dict[str, Any]]:
+    """Build one debug row for each calendar event and Read IA payload pair."""
+    rows = []
+    for event in events:
+        parsed_student = parse_student_from_calendar_title(str(event.get("title", "")))
+        for meeting in meetings:
+            if parsed_student is None:
+                rows.append(
+                    _debug_row(
+                        event,
+                        {"nome": "", "matricula": ""},
+                        meeting,
+                        report_date,
+                        score=0,
+                        match_type="evento_nao_parseado",
+                    )
+                )
+                continue
+
+            calendar_subject = {
+                **parsed_student,
+                "calendar_start": event.get("start", ""),
+            }
+            score = score_calendar_event_to_meeting(calendar_subject, meeting)
+            rows.append(
+                _debug_row(
+                    event,
+                    parsed_student,
+                    meeting,
+                    report_date,
+                    score=score.confidence,
+                    match_type=score.match_type,
+                )
+            )
+    return rows
+
+
+def write_debug_readia_matches_csv(
+    rows: list[dict[str, Any]],
+    report_date: str,
+    *,
+    preview_dir: Path = PREVIEW_DIR,
+) -> Path:
+    """Write debug rows with every event x Read IA payload combination."""
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = preview_dir / f"debug_readia_matches_{report_date}.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=DEBUG_CSV_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
     return csv_path
@@ -193,6 +279,40 @@ def _base_row(
         "readia_report_url": readia_report_url,
         "observacao": observacao,
     }
+
+
+def _debug_row(
+    event: dict[str, Any],
+    student: dict[str, str],
+    meeting: dict[str, Any],
+    report_date: str,
+    *,
+    score: int,
+    match_type: str,
+) -> dict[str, Any]:
+    return {
+        "data": report_date,
+        "nome": student.get("nome", ""),
+        "matricula": student.get("matricula", ""),
+        "calendar_title": event.get("title", ""),
+        "calendar_start": event.get("start", ""),
+        "calendar_end": event.get("end", ""),
+        "readia_date": meeting.get("date", ""),
+        "readia_received_at": meeting.get("received_at", ""),
+        "readia_meeting_id": meeting.get("meeting_id", ""),
+        "readia_title": meeting.get("title", ""),
+        "readia_summary": _preview_cell(meeting.get("summary", "")),
+        "readia_report_url": meeting.get("report_url", ""),
+        "score": score,
+        "match_type": match_type,
+    }
+
+
+def _preview_cell(value: Any, max_length: int = 300) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3]}..."
 
 
 def _category_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
