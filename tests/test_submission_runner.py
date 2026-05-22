@@ -102,7 +102,7 @@ def test_mesmo_aluno_status_e_semana_e_duplicado(
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "PULADO - Aluno Um - PDITA001 - já enviado nesta semana/status" in output
+    assert "PULADO - Aluno Um - PDITA001 - ja enviado nesta semana/status" in output
     assert "[DRY-RUN]" not in output
 
 
@@ -209,7 +209,7 @@ def test_log_antigo_sem_iso_year_week_continua_funcionando(
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "PULADO - Aluno Um - PDITA001 - já enviado nesta semana/status" in output
+    assert "PULADO - Aluno Um - PDITA001 - ja enviado nesta semana/status" in output
 
 
 def test_faltas_sem_motivo_usam_sem_resposta() -> None:

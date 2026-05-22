@@ -100,6 +100,7 @@ def run_batch(
     only_matricula: str | None = None,
     assume_yes: bool = False,
     skip_existing: bool = False,
+    duplicate_scope: str = "weekly",
     log_dir: Path = SUBMISSION_LOG_DIR,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
@@ -127,6 +128,7 @@ def run_batch(
         only_matricula=only_matricula,
         assume_yes=assume_yes,
         skip_existing=skip_existing,
+        duplicate_scope=duplicate_scope,
         log_dir=log_dir,
         submitter=submitter,
     )
@@ -143,21 +145,29 @@ def run_prepared_batch(
     only_matricula: str | None = None,
     assume_yes: bool = False,
     skip_existing: bool = False,
+    duplicate_scope: str = "weekly",
     log_dir: Path = SUBMISSION_LOG_DIR,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
 ) -> int:
     """Process already built payloads with optional duplicate skipping."""
     ignored_rows = ignored_rows or []
-    existing_keys = load_existing_submission_keys(log_dir) if skip_existing else set()
+    existing_keys = (
+        load_existing_submission_keys(log_dir, duplicate_scope=duplicate_scope)
+        if skip_existing
+        else set()
+    )
     payloads_to_send: list[MonitoriaPayload] = []
     skipped_count = 0
 
     for payload in payloads:
-        if _payload_key(payload) in existing_keys:
+        if _payload_key(payload, duplicate_scope=duplicate_scope) in existing_keys:
             skipped_count += 1
+            duplicate_label = (
+                "data/status" if duplicate_scope == "daily" else "semana/status"
+            )
             print(
                 f"PULADO - {payload.nome} - {payload.matricula} "
-                "- já enviado nesta semana/status"
+                f"- ja enviado nesta {duplicate_label}"
             )
             continue
         payloads_to_send.append(payload)
@@ -361,18 +371,22 @@ def _send_payload(
     return "ERRO", f"HTTP {response.status_code}: {response.text[:200]}"
 
 
-def load_existing_submission_keys(log_dir: Path = SUBMISSION_LOG_DIR) -> set[tuple[str, str, int, int]]:
+def load_existing_submission_keys(
+    log_dir: Path = SUBMISSION_LOG_DIR,
+    *,
+    duplicate_scope: str = "weekly",
+) -> set[tuple[Any, ...]]:
     """Load successful submission keys from previous CSV logs."""
     if not log_dir.exists():
         return set()
 
-    keys: set[tuple[str, str, int, int]] = set()
+    keys: set[tuple[Any, ...]] = set()
     for path in log_dir.glob("*.csv"):
         try:
             with path.open(newline="", encoding="utf-8") as log_file:
                 for row in csv.DictReader(log_file):
                     if row.get("resultado") == "OK":
-                        key = _log_row_key(row)
+                        key = _log_row_key(row, duplicate_scope=duplicate_scope)
                         if key is not None:
                             keys.add(key)
         except OSError:
@@ -381,11 +395,21 @@ def load_existing_submission_keys(log_dir: Path = SUBMISSION_LOG_DIR) -> set[tup
     return keys
 
 
-def _log_row_key(row: dict[str, str]) -> tuple[str, str, int, int] | None:
+def _log_row_key(
+    row: dict[str, str],
+    *,
+    duplicate_scope: str,
+) -> tuple[Any, ...] | None:
     matricula = str(row.get("matricula", "")).strip().casefold()
     status = str(row.get("status", "")).strip()
     if not matricula or not status:
         return None
+
+    if duplicate_scope == "daily":
+        data = str(row.get("data", "")).strip()
+        if not data:
+            return None
+        return (matricula, status, data)
 
     try:
         if row.get("iso_year") and row.get("iso_week"):
@@ -401,7 +425,18 @@ def _log_row_key(row: dict[str, str]) -> tuple[str, str, int, int] | None:
     return (matricula, status, iso_year, iso_week)
 
 
-def _payload_key(payload: MonitoriaPayload) -> tuple[str, str, int, int]:
+def _payload_key(
+    payload: MonitoriaPayload,
+    *,
+    duplicate_scope: str,
+) -> tuple[Any, ...]:
+    if duplicate_scope == "daily":
+        return (
+            payload.matricula.strip().casefold(),
+            payload.status.strip(),
+            payload.data.strip(),
+        )
+
     week_info = get_iso_week_info(payload.data)
     return (
         payload.matricula.strip().casefold(),

@@ -43,7 +43,7 @@ def test_evento_com_matricula_no_readia_vira_presente() -> None:
     )
 
     assert rows[0]["categoria"] == "presentes_confirmados"
-    assert rows[0]["status"] == "Presenca"
+    assert rows[0]["status"] == "Presente"
     assert rows[0]["match_confidence"] == 100
     assert rows[0]["match_type"] == "matricula"
 
@@ -61,7 +61,7 @@ def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:
     )
 
     assert rows[0]["categoria"] == "presentes_confirmados"
-    assert rows[0]["status"] == "Presenca"
+    assert rows[0]["status"] == "Presente"
     assert rows[0]["match_confidence"] == 50
     assert rows[0]["match_type"] == "nome_completo"
 

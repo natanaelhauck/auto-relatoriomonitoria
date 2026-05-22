@@ -173,7 +173,7 @@ python -m src.preview_monitoria_agenda_do_dia --date 2026-05-21
 O arquivo gerado fica em `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
 e classifica os eventos em:
 
-- `presentes_confirmados`: score 50 ou maior, marcado como `Presenca`.
+- `presentes_confirmados`: score 50 ou maior, marcado como `Presente`.
 - `matches_fracos`: score entre 1 e 49, marcado como `Falta` e separado para revisao.
 - `faltas_candidatas`: evento agendado sem match no Read IA do dia.
 - `eventos_nao_parseados`: evento sem matricula reconhecivel no titulo.
@@ -204,10 +204,15 @@ python -m src.preview_monitoria_do_dia --date 2026-05-21
 Antes de enviar dados reais, revise os payloads:
 
 ```bash
+python -m src.submit_monitoria_agenda_do_dia --date 2026-05-21 --dry-run
 python -m src.submit_nao_agendados --dry-run
 python -m src.submit_finalizados --dry-run
 python -m src.submit_faltas_sem_resposta --dry-run
 ```
+
+O envio diario por agenda le o CSV `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
+gerado pelo preview. No modo real, ele pede a confirmacao literal `ENVIAR` e
+aplica duplicidade diaria por matricula, status e data.
 
 ## Faltas
 

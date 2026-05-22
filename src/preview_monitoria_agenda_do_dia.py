@@ -30,6 +30,7 @@ CSV_FIELDS = [
     "match_confidence",
     "match_type",
     "readia_title",
+    "readia_summary",
     "readia_report_url",
     "observacao",
 ]
@@ -217,7 +218,7 @@ def _matched_event_row(
 
     if match.confidence >= 50:
         categoria = "presentes_confirmados"
-        status = "Presenca"
+        status = "Presente"
         observacao = "match confirmado"
     else:
         categoria = "matches_fracos"
@@ -233,6 +234,7 @@ def _matched_event_row(
         match_confidence=match.confidence,
         match_type=match.match_type,
         readia_title=match.meeting.get("title", ""),
+        readia_summary=match.meeting.get("summary", ""),
         readia_report_url=match.meeting.get("report_url", ""),
         observacao=observacao,
     )
@@ -262,6 +264,7 @@ def _base_row(
     match_type: str,
     observacao: str,
     readia_title: str = "",
+    readia_summary: str = "",
     readia_report_url: str = "",
 ) -> dict[str, Any]:
     return {
@@ -276,6 +279,7 @@ def _base_row(
         "match_confidence": match_confidence,
         "match_type": match_type,
         "readia_title": readia_title,
+        "readia_summary": readia_summary,
         "readia_report_url": readia_report_url,
         "observacao": observacao,
     }
