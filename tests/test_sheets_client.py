@@ -31,7 +31,6 @@ def test_append_readia_payload_ordena_colunas_sem_chamada_real(monkeypatch) -> N
         spreadsheet_id="sheet-id",
         sheet_nao_agendados="Em Analise",
         sheet_finalizados="Finalizaram",
-        sheet_faltas="Faltas",
         sheet_presentes="Presentes",
         sheet_ativos="Ativo",
         default_agente="Natanael",
@@ -91,6 +90,18 @@ def test_load_sheets_settings_aceita_json_da_service_account(monkeypatch) -> Non
 
     assert settings.service_account_json == '{"type": "service_account"}'
     assert settings.service_account_file is None
+    assert not hasattr(settings, "sheet_faltas")
+
+
+def test_load_sheets_settings_nao_exige_sheet_faltas(monkeypatch) -> None:
+    _set_required_sheets_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/google-service-account.json")
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    monkeypatch.delenv("SHEET_FALTAS", raising=False)
+
+    settings = sheets_client.load_sheets_settings()
+
+    assert not hasattr(settings, "sheet_faltas")
 
 
 def test_build_sheets_service_prioriza_json_da_service_account(monkeypatch) -> None:
@@ -112,7 +123,6 @@ def test_build_sheets_service_prioriza_json_da_service_account(monkeypatch) -> N
         spreadsheet_id="sheet-id",
         sheet_nao_agendados="Em Analise",
         sheet_finalizados="Finalizaram",
-        sheet_faltas="Faltas",
         sheet_presentes="Presentes",
         sheet_ativos="Ativo",
         default_agente="Natanael",
@@ -151,7 +161,6 @@ def test_build_sheets_service_usa_arquivo_quando_json_nao_existe(monkeypatch) ->
         spreadsheet_id="sheet-id",
         sheet_nao_agendados="Em Analise",
         sheet_finalizados="Finalizaram",
-        sheet_faltas="Faltas",
         sheet_presentes="Presentes",
         sheet_ativos="Ativo",
         default_agente="Natanael",
@@ -202,4 +211,3 @@ def _set_required_sheets_env(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_SPREADSHEET_ID", "sheet-id")
     monkeypatch.setenv("SHEET_NAO_AGENDADOS", "Em Analise")
     monkeypatch.setenv("SHEET_FINALIZADOS", "Finalizaram")
-    monkeypatch.setenv("SHEET_FALTAS", "Faltas")

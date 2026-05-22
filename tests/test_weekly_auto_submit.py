@@ -10,7 +10,6 @@ def test_envio_semanal_junta_nao_agendados_e_finalizados(monkeypatch) -> None:
         spreadsheet_id="sheet-id",
         sheet_nao_agendados="Em Análise",
         sheet_finalizados="Finalizaram",
-        sheet_faltas="Faltas",
         sheet_presentes="Presentes",
         sheet_ativos="Ativo",
         default_agente="Natanael",

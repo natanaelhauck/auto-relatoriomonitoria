@@ -46,7 +46,6 @@ GOOGLE_CALENDAR_ID=primary
 GOOGLE_CALENDAR_TIMEZONE=America/Sao_Paulo
 SHEET_NAO_AGENDADOS=Em Análise
 SHEET_FINALIZADOS=Finalizaram
-SHEET_FALTAS=Faltas
 SHEET_PRESENTES=Presentes
 SHEET_ATIVOS=Ativo
 ```
@@ -211,31 +210,15 @@ python -m src.submit_faltas_sem_resposta --dry-run
 
 ## Faltas
 
-O fluxo de faltas le a aba configurada em `SHEET_FALTAS` (por padrao,
-`Faltas`). Se a aba nao existir, o comando mostra um aviso e encerra com
-codigo 0.
+O fluxo principal de faltas usa o Google Agenda como fonte dos alunos
+agendados e os payloads salvos do Read IA como confirmacao de presenca. Quando
+um evento de monitoria do dia tem nome e matricula no titulo, mas nao tem match
+confirmado no Read IA do mesmo dia, o aluno entra como `Falta` com motivo
+`Sem resposta`.
 
-Estrutura esperada da aba:
-
-```text
-NOME | PDITA | Motivo da Falta
-```
-
-Tambem sao aceitos os cabecalhos `Motivo`, `Motivo da Falta` e
-`motivo_falta`. Quando o motivo estiver vazio, o envio usa `Sem resposta`.
-
-Motivos esperados:
-
-- Sem resposta
-- Trabalho ou Estudo
-- Questoes Medicas
-- Viajando
-- Notebook com Suporte
-- Atraso/Compromisso
-- Reuniao/Demanda (PD)
-- Troca de turno
-- Problema de Internet
-- Outro
+Nao use `SHEET_FALTAS`: nao e necessario ter aba manual de faltas na planilha.
+Eventos sem matricula reconhecivel no titulo nao sao enviados automaticamente;
+revise antes com o preview de agenda.
 
 Exemplos:
 

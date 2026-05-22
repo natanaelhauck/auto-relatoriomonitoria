@@ -1,5 +1,6 @@
 """Tests for Google Calendar based monitoring preview."""
 
+from src import calendar_client
 from src.calendar_client import parse_student_from_calendar_title
 from src.preview_monitoria_agenda_do_dia import build_agenda_preview_rows
 
@@ -64,6 +65,36 @@ def test_evento_sem_matricula_vai_para_nao_parseados() -> None:
 
     assert rows[0]["categoria"] == "eventos_nao_parseados"
     assert rows[0]["match_type"] == "sem_matricula_no_titulo"
+
+
+def test_calendar_service_prioriza_json_da_service_account(monkeypatch) -> None:
+    calls = {}
+
+    class FakeCredentials:
+        @staticmethod
+        def from_service_account_info(info, scopes):
+            calls["info"] = (info, scopes)
+            return "credentials-from-info"
+
+        @staticmethod
+        def from_service_account_file(path, scopes):
+            calls["file"] = (path, scopes)
+            return "credentials-from-file"
+
+    monkeypatch.setattr(calendar_client.service_account, "Credentials", FakeCredentials)
+    monkeypatch.setattr(calendar_client, "build", lambda *args, **kwargs: (args, kwargs))
+
+    service = calendar_client._build_calendar_service(
+        service_account_file="credentials/google-service-account.json",
+        service_account_json='{"type": "service_account"}',
+    )
+
+    assert calls["info"] == ({"type": "service_account"}, calendar_client.SCOPES)
+    assert "file" not in calls
+    assert service == (
+        ("calendar", "v3"),
+        {"credentials": "credentials-from-info", "cache_discovery": False},
+    )
 
 
 def _event(**overrides: str) -> dict[str, object]:

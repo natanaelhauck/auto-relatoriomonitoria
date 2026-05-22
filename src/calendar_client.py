@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import datetime, time, timedelta
@@ -20,7 +21,14 @@ MATRICULA_PATTERN = re.compile(r"\b(P[A-Z]{2,5}\d+)\b", re.IGNORECASE)
 def get_events_for_date(date_str: str) -> list[dict[str, Any]]:
     """Return Google Calendar events for a date in YYYY-MM-DD format."""
     load_dotenv()
-    service_account_file = _required_env("GOOGLE_SERVICE_ACCOUNT_FILE")
+    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    service_account_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+    if not service_account_json and not service_account_file:
+        raise RuntimeError(
+            "Missing required environment variable: "
+            "GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE"
+        )
+
     calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary").strip() or "primary"
     timezone_name = (
         os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Sao_Paulo").strip()
@@ -28,7 +36,10 @@ def get_events_for_date(date_str: str) -> list[dict[str, Any]]:
     )
     timezone = ZoneInfo(timezone_name)
     start, end = _date_bounds(date_str, timezone)
-    service = _build_calendar_service(service_account_file)
+    service = _build_calendar_service(
+        service_account_file=service_account_file or None,
+        service_account_json=service_account_json or None,
+    )
 
     try:
         result = (
@@ -48,7 +59,7 @@ def get_events_for_date(date_str: str) -> list[dict[str, Any]]:
             "Nao foi possivel ler o Google Agenda. Habilite a Google Calendar "
             "API no projeto da service account, verifique GOOGLE_CALENDAR_ID e "
             "compartilhe a agenda com o e-mail da service account usada em "
-            "GOOGLE_SERVICE_ACCOUNT_FILE."
+            "GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_SERVICE_ACCOUNT_FILE."
         ) from exc
 
     return [_normalize_event(event) for event in result.get("items", [])]
@@ -73,19 +84,47 @@ def parse_student_from_calendar_title(title: str) -> dict[str, str] | None:
     }
 
 
-def _required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
-
-
-def _build_calendar_service(service_account_file: str) -> Any:
-    credentials = service_account.Credentials.from_service_account_file(
-        service_account_file,
-        scopes=SCOPES,
+def _build_calendar_service(
+    *,
+    service_account_file: str | None,
+    service_account_json: str | None = None,
+) -> Any:
+    credentials = _build_service_account_credentials(
+        service_account_file=service_account_file,
+        service_account_json=service_account_json,
     )
     return build("calendar", "v3", credentials=credentials, cache_discovery=False)
+
+
+def _build_service_account_credentials(
+    *,
+    service_account_file: str | None,
+    service_account_json: str | None,
+) -> service_account.Credentials:
+    if service_account_json:
+        try:
+            service_account_info = json.loads(service_account_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Invalid GOOGLE_SERVICE_ACCOUNT_JSON: expected complete service "
+                "account JSON content."
+            ) from exc
+
+        return service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES,
+        )
+
+    if service_account_file:
+        return service_account.Credentials.from_service_account_file(
+            service_account_file,
+            scopes=SCOPES,
+        )
+
+    raise RuntimeError(
+        "Missing required environment variable: "
+        "GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE"
+    )
 
 
 def _date_bounds(
