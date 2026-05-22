@@ -48,7 +48,11 @@ def build_faltas_rows_from_agenda_readia(report_date: str) -> list[dict[str, str
             "motivo_falta": MOTIVO_SEM_RESPOSTA,
         }
         for row in preview_rows
-        if row.get("categoria") == "faltas_candidatas"
+        if row.get("status") == STATUS_FALTA
+        or (
+            not row.get("status")
+            and row.get("categoria") == "faltas_candidatas"
+        )
     ]
 
 

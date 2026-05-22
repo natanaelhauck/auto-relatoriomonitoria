@@ -11,14 +11,16 @@ from src.calendar_client import get_events_for_date, parse_student_from_calendar
 from src.readia_matcher import (
     MatchResult,
     best_match_calendar_event_to_meetings,
-    load_readia_meetings,
+    load_readia_meetings_from_sheet_rows,
 )
+from src.sheets_client import read_readia_payload_rows
 from src.submission_runner import _today_sao_paulo, parse_report_date
 
 PREVIEW_DIR = Path("data/previews")
 CSV_FIELDS = [
     "data",
     "categoria",
+    "status",
     "nome",
     "matricula",
     "calendar_title",
@@ -40,18 +42,19 @@ def preview_monitoria_agenda_do_dia(
     """Read calendar events and Read IA payloads, then write a review CSV."""
     target_date = report_date or _today_sao_paulo()
     events = get_events_for_date(target_date)
-    meetings = load_readia_meetings(report_date=target_date)
+    payload_rows = read_readia_payload_rows()
+    meetings = load_readia_meetings_from_sheet_rows(
+        payload_rows,
+        report_date=target_date,
+    )
     rows = build_agenda_preview_rows(events, meetings, target_date)
     csv_path = write_agenda_preview_csv(rows, target_date, preview_dir=preview_dir)
     counts = _category_counts(rows)
 
     print(f"Total eventos agenda: {len(events)}")
-    print(f"Eventos com aluno identificado: {len(events) - counts['eventos_nao_parseados']}")
-    print(f"Total payloads Read IA do dia: {len(meetings)}")
     print(f"Presentes confirmados: {counts['presentes_confirmados']}")
     print(f"Matches fracos: {counts['matches_fracos']}")
     print(f"Faltas candidatas: {counts['faltas_candidatas']}")
-    print(f"Eventos nao parseados: {counts['eventos_nao_parseados']}")
     print(f"Caminho CSV: {csv_path}")
     return 0
 
@@ -120,23 +123,27 @@ def _matched_event_row(
             student,
             report_date,
             categoria="faltas_candidatas",
+            status="Falta",
             match_confidence=0,
             match_type="sem_match",
             observacao="sem match Read IA no dia",
         )
 
-    if match.confidence >= 80:
+    if match.confidence >= 50:
         categoria = "presentes_confirmados"
+        status = "Presenca"
         observacao = "match confirmado"
     else:
         categoria = "matches_fracos"
-        observacao = "revisar antes de enviar"
+        status = "Falta"
+        observacao = "score abaixo de 50; revisar antes de enviar"
 
     return _base_row(
         event,
         student,
         report_date,
         categoria=categoria,
+        status=status,
         match_confidence=match.confidence,
         match_type=match.match_type,
         readia_title=match.meeting.get("title", ""),
@@ -151,6 +158,7 @@ def _unparsed_event_row(event: dict[str, Any], report_date: str) -> dict[str, An
         {"nome": "", "matricula": ""},
         report_date,
         categoria="eventos_nao_parseados",
+        status="Revisar",
         match_confidence=0,
         match_type="sem_matricula_no_titulo",
         observacao="evento sem nome/matricula reconhecivel no titulo",
@@ -163,6 +171,7 @@ def _base_row(
     report_date: str,
     *,
     categoria: str,
+    status: str,
     match_confidence: int,
     match_type: str,
     observacao: str,
@@ -172,6 +181,7 @@ def _base_row(
     return {
         "data": report_date,
         "categoria": categoria,
+        "status": status,
         "nome": student.get("nome", ""),
         "matricula": student.get("matricula", ""),
         "calendar_title": event.get("title", ""),

@@ -1,6 +1,9 @@
 """Tests for Google Calendar based monitoring preview."""
 
+from pathlib import Path
+
 from src import calendar_client
+from src import preview_monitoria_agenda_do_dia as agenda_preview
 from src.calendar_client import parse_student_from_calendar_title
 from src.preview_monitoria_agenda_do_dia import build_agenda_preview_rows
 
@@ -35,13 +38,50 @@ def test_evento_com_matricula_no_readia_vira_presente() -> None:
                 start="2026-05-21T10:00:00-03:00",
             )
         ],
-        [_meeting(title="Maria Silva PDITA123 and Natanael Hauck")],
+        [_meeting(title="Monitoria PDITA123 and Natanael Hauck")],
         "2026-05-21",
     )
 
     assert rows[0]["categoria"] == "presentes_confirmados"
+    assert rows[0]["status"] == "Presenca"
     assert rows[0]["match_confidence"] == 100
     assert rows[0]["match_type"] == "matricula"
+
+
+def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:
+    rows = build_agenda_preview_rows(
+        [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start="2026-05-21T10:00:00-03:00",
+            )
+        ],
+        [_meeting(payload_json='{"notes": "Maria Silva Santos participou."}')],
+        "2026-05-21",
+    )
+
+    assert rows[0]["categoria"] == "presentes_confirmados"
+    assert rows[0]["status"] == "Presenca"
+    assert rows[0]["match_confidence"] == 50
+    assert rows[0]["match_type"] == "nome_completo"
+
+
+def test_evento_com_primeiro_segundo_nome_vira_match_fraco_falta() -> None:
+    rows = build_agenda_preview_rows(
+        [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start="2026-05-21T10:00:00-03:00",
+            )
+        ],
+        [_meeting(summary="Resumo gerado para Maria Silva.")],
+        "2026-05-21",
+    )
+
+    assert rows[0]["categoria"] == "matches_fracos"
+    assert rows[0]["status"] == "Falta"
+    assert rows[0]["match_confidence"] == 30
+    assert rows[0]["match_type"] == "primeiro_segundo_nome"
 
 
 def test_evento_sem_readia_vira_falta_candidata() -> None:
@@ -52,6 +92,7 @@ def test_evento_sem_readia_vira_falta_candidata() -> None:
     )
 
     assert rows[0]["categoria"] == "faltas_candidatas"
+    assert rows[0]["status"] == "Falta"
     assert rows[0]["matricula"] == "PDITA123"
     assert rows[0]["match_type"] == "sem_match"
 
@@ -64,7 +105,53 @@ def test_evento_sem_matricula_vai_para_nao_parseados() -> None:
     )
 
     assert rows[0]["categoria"] == "eventos_nao_parseados"
+    assert rows[0]["status"] == "Revisar"
     assert rows[0]["match_type"] == "sem_matricula_no_titulo"
+
+
+def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        agenda_preview,
+        "get_events_for_date",
+        lambda report_date: [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start=f"{report_date}T10:00:00-03:00",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        agenda_preview,
+        "read_readia_payload_rows",
+        lambda: [
+            {
+                "received_at": "2026-05-21T14:30:00-03:00",
+                "title": "Monitoria",
+                "summary": "",
+                "report_url": "https://read.ai/report/abc",
+                "payload_json": '{"notes": "Maria Silva Santos participou."}',
+            }
+        ],
+    )
+
+    preview_dir = Path("data/previews/test_calendar_preview")
+    csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
+    try:
+        exit_code = agenda_preview.preview_monitoria_agenda_do_dia(
+            report_date="2026-05-21",
+            preview_dir=preview_dir,
+        )
+    finally:
+        if csv_path.exists():
+            csv_path.unlink()
+        if preview_dir.exists():
+            preview_dir.rmdir()
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Total eventos agenda: 1" in output
+    assert "Presentes confirmados: 1" in output
+    assert f"Caminho CSV: {csv_path}" in output
 
 
 def test_calendar_service_prioriza_json_da_service_account(monkeypatch) -> None:
@@ -119,6 +206,7 @@ def _meeting(**overrides: object) -> dict[str, object]:
         "participants": [],
         "emails": [],
         "raw_text": "",
+        "payload_json": "",
     }
     meeting.update(overrides)
     return meeting

@@ -58,6 +58,44 @@ def load_readia_meetings(
     return meetings
 
 
+def load_readia_meetings_from_sheet_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    report_date: str | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize Read IA payload rows loaded from Google Sheets."""
+    meetings = []
+    for row in rows:
+        meeting = normalize_readia_sheet_row(row)
+        if report_date is None or meeting.get("date") == report_date:
+            meetings.append(meeting)
+    return meetings
+
+
+def normalize_readia_sheet_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize one row from the configured Read IA payloads sheet."""
+    payload_json = _clean_scalar(row.get("payload_json"))
+    payload = _parse_json_payload(payload_json)
+    document = {
+        "received_at": row.get("received_at"),
+        "payload": payload if payload is not None else {"raw_text": payload_json},
+    }
+    meeting = normalize_readia_payload(document)
+
+    for source_key, meeting_key in (
+        ("meeting_id", "meeting_id"),
+        ("title", "title"),
+        ("summary", "summary"),
+        ("report_url", "report_url"),
+    ):
+        value = _clean_scalar(row.get(source_key))
+        if value:
+            meeting[meeting_key] = value
+
+    meeting["payload_json"] = payload_json or meeting.get("payload_json", "")
+    return meeting
+
+
 def normalize_readia_payload(document: Any) -> dict[str, Any]:
     """Normalize a saved Read IA payload into the fields used by matching."""
     if isinstance(document, Mapping):
@@ -74,6 +112,7 @@ def normalize_readia_payload(document: Any) -> dict[str, Any]:
     participants_value = _find_first(payload, ("participants", "attendees"))
     explicit_emails = _find_first(payload, ("emails",))
     date_value = _find_first(payload, ("start_time", "created_at", "date"))
+    payload_json = _json_text(payload)
 
     participants = _string_list(participants_value)
     email_sources = [participants_value, explicit_emails, payload]
@@ -95,6 +134,7 @@ def normalize_readia_payload(document: Any) -> dict[str, Any]:
         "participants": participants,
         "emails": emails,
         "raw_text": _clean_scalar(raw_text),
+        "payload_json": payload_json,
     }
 
 
@@ -111,32 +151,29 @@ def match_calendar_event_to_meeting(
     meeting: dict[str, Any],
 ) -> MatchResult | None:
     """Match one parsed calendar event to one normalized Read IA meeting."""
-    return _match_subject_to_meeting(
-        calendar_event,
-        meeting,
-        calendar_start=str(calendar_event.get("calendar_start") or ""),
-    )
+    return _match_subject_to_meeting(calendar_event, meeting)
 
 
 def _match_subject_to_meeting(
     subject: Mapping[str, Any],
     meeting: dict[str, Any],
-    *,
-    calendar_start: str = "",
 ) -> MatchResult | None:
     """Match one student-like subject to one normalized Read IA meeting."""
     matricula = _normalize_identifier(subject.get("matricula"))
     email = _normalize_email(subject.get("email"))
     full_name = normalize_text(subject.get("nome"))
     first_second_name = _first_second_name(full_name)
+    first_name = _first_name(full_name)
+    search_text = _meeting_search_text(meeting)
+    normalized_search_text = normalize_text(search_text)
+    identifier_search_text = _normalize_identifier(search_text)
 
-    title = normalize_text(meeting.get("title"))
-    summary = normalize_text(meeting.get("summary"))
-    raw_text = normalize_text(meeting.get("raw_text"))
-    combined_text = f"{title} {summary} {raw_text}"
+    score = 0
+    match_parts: list[str] = []
 
-    if matricula and matricula in _normalize_identifier(combined_text):
-        return MatchResult(100, "matricula", meeting)
+    if matricula and matricula in identifier_search_text:
+        score += 100
+        match_parts.append("matricula")
 
     meeting_emails = {_normalize_email(item) for item in meeting.get("emails", [])}
     participant_emails = {
@@ -145,25 +182,23 @@ def _match_subject_to_meeting(
         for email_value in _extract_emails(participant)
     }
     if email and email in meeting_emails.union(participant_emails):
-        return MatchResult(100, "email", meeting)
+        score += 100
+        match_parts.append("email")
 
-    if full_name and full_name in title:
-        return MatchResult(95, "nome_completo_titulo", meeting)
+    if _contains_normalized_phrase(normalized_search_text, full_name):
+        score += 50
+        match_parts.append("nome_completo")
+    elif _contains_normalized_phrase(normalized_search_text, first_second_name):
+        score += 30
+        match_parts.append("primeiro_segundo_nome")
+    elif _contains_normalized_phrase(normalized_search_text, first_name):
+        score += 15
+        match_parts.append("primeiro_nome")
 
-    if first_second_name and first_second_name in title:
-        return MatchResult(85, "primeiro_segundo_nome_titulo", meeting)
+    if score <= 0:
+        return None
 
-    summary_raw = f"{summary} {raw_text}"
-    if full_name and full_name in summary_raw:
-        return MatchResult(80, "nome_completo_resumo", meeting)
-
-    if first_second_name and first_second_name in summary_raw:
-        return MatchResult(70, "primeiro_segundo_nome_resumo", meeting)
-
-    if _is_close_time(calendar_start, str(meeting.get("start_time") or "")):
-        return MatchResult(60, "horario_proximo", meeting)
-
-    return None
+    return MatchResult(score, "+".join(match_parts), meeting)
 
 
 def best_match_student_to_meetings(
@@ -233,33 +268,34 @@ def _extract_date(value: Any) -> str:
         return ""
 
 
-def _is_close_time(calendar_start: str, meeting_start: str) -> bool:
-    calendar_datetime = _parse_datetime(calendar_start)
-    meeting_datetime = _parse_datetime(meeting_start)
-    if calendar_datetime is None or meeting_datetime is None:
-        return False
-
-    if calendar_datetime.tzinfo is not None and meeting_datetime.tzinfo is not None:
-        delta_seconds = abs(calendar_datetime.timestamp() - meeting_datetime.timestamp())
-    else:
-        delta_seconds = abs(
-            (
-                calendar_datetime.replace(tzinfo=None)
-                - meeting_datetime.replace(tzinfo=None)
-            ).total_seconds()
+def _meeting_search_text(meeting: Mapping[str, Any]) -> str:
+    participants = " ".join(
+        _clean_scalar(participant) for participant in meeting.get("participants", [])
+    )
+    return " ".join(
+        value
+        for value in (
+            _clean_scalar(meeting.get("title")),
+            _clean_scalar(meeting.get("summary")),
+            participants,
+            _clean_scalar(meeting.get("payload_json")),
         )
+        if value
+    )
 
-    return delta_seconds <= 30 * 60
+
+def _contains_normalized_phrase(text: str, phrase: str) -> bool:
+    if not text or not phrase:
+        return False
+    return f" {phrase} " in f" {text} "
 
 
-def _parse_datetime(value: str) -> datetime | None:
-    text = str(value or "").strip()
-    if not text or "T" not in text:
+def _parse_json_payload(value: str) -> Any:
+    if not value:
         return None
-
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
+        return json.loads(value)
+    except json.JSONDecodeError:
         return None
 
 
@@ -305,6 +341,14 @@ def _clean_scalar(value: Any) -> str:
     return str(value).strip()
 
 
+def _json_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value).strip()
+
+
 def _normalize_email(value: Any) -> str:
     return str(value or "").strip().lower()
 
@@ -318,3 +362,8 @@ def _first_second_name(full_name: str) -> str:
     if len(parts) < 2:
         return ""
     return " ".join(parts[:2])
+
+
+def _first_name(full_name: str) -> str:
+    parts = [part for part in full_name.split() if part]
+    return parts[0] if parts else ""

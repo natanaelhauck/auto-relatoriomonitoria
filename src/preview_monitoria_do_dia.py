@@ -111,7 +111,7 @@ def _preview_row(
             "observacao": "sem match Read IA no dia",
         }
 
-    if match.confidence >= 80:
+    if match.confidence >= 50:
         categoria = "presentes_confirmados"
         observacao = "match confirmado"
     else:

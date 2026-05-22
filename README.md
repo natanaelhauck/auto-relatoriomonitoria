@@ -164,7 +164,7 @@ Octavio Augusto de Araujo Americo PDBD163 and Natanael Hauck
 ```
 
 Gere um CSV de revisao cruzando os eventos da agenda com os payloads Read IA
-salvos em `data/read_payloads/`:
+salvos na aba configurada por `SHEET_READIA_PAYLOADS`:
 
 ```bash
 python -m src.preview_monitoria_agenda_do_dia --date 2026-05-21
@@ -173,14 +173,15 @@ python -m src.preview_monitoria_agenda_do_dia --date 2026-05-21
 O arquivo gerado fica em `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
 e classifica os eventos em:
 
-- `presentes_confirmados`: match com confianca 80 ou maior.
-- `matches_fracos`: match entre 60 e 79, exige revisao manual.
-- `faltas_candidatas`: evento agendado sem match confirmado no Read IA do dia.
+- `presentes_confirmados`: score 50 ou maior, marcado como `Presenca`.
+- `matches_fracos`: score entre 1 e 49, marcado como `Falta` e separado para revisao.
+- `faltas_candidatas`: evento agendado sem match no Read IA do dia.
 - `eventos_nao_parseados`: evento sem matricula reconhecivel no titulo.
 
-As regras mais fortes sao matricula encontrada no titulo/resumo/texto bruto do
-Read IA e nome completo encontrado no titulo do Read IA. Horario proximo ajuda
-na revisao, mas sozinho nao confirma presenca.
+O score soma 100 pontos para matricula encontrada, 50 para nome completo,
+30 para primeiro e segundo nome, e 15 para primeiro nome. A busca considera
+`title`, `summary`, `participants` e o `payload_json` completo salvo na aba de
+payloads.
 
 A aba `Ativo` pode ser usada como apoio para completar dados cadastrais, mas nao
 e a base principal para gerar faltas do dia.
