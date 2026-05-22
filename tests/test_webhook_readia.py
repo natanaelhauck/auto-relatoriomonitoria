@@ -20,9 +20,11 @@ def test_read_webhook_salva_arquivo_json(monkeypatch) -> None:
     payload_dir = Path("tests/_tmp_read_payloads")
     shutil.rmtree(payload_dir, ignore_errors=True)
     payload_dir.mkdir(parents=True)
+    appended_rows = []
 
     try:
         monkeypatch.setattr(webhook_readia, "PAYLOAD_DIR", payload_dir)
+        monkeypatch.setattr(webhook_readia, "append_readia_payload", appended_rows.append)
         client = webhook_readia.app.test_client()
 
         response = client.post(
@@ -35,6 +37,7 @@ def test_read_webhook_salva_arquivo_json(monkeypatch) -> None:
         )
 
         assert response.status_code == 202
+        assert response.get_json()["sheet_status"] == "saved"
         saved_files = list(payload_dir.glob("*.json"))
         assert len(saved_files) == 1
         assert "readia_abc123" in saved_files[0].name
@@ -44,5 +47,31 @@ def test_read_webhook_salva_arquivo_json(monkeypatch) -> None:
         assert "headers" in document
         assert document["payload"]["session_id"] == "abc123"
         assert document["payload"]["summary"] == "Resumo do encontro"
+
+        assert len(appended_rows) == 1
+        assert appended_rows[0]["meeting_id"] == "abc123"
+        assert appended_rows[0]["title"] == "Monitoria"
+        assert appended_rows[0]["summary"] == "Resumo do encontro"
     finally:
         shutil.rmtree(payload_dir, ignore_errors=True)
+
+
+def test_build_readia_payload_row_extrai_campos_principais() -> None:
+    row = webhook_readia.build_readia_payload_row(
+        {
+            "meeting": {
+                "meetingId": "meet-123",
+                "meetingTitle": "Monitoria Read IA",
+                "reportSummary": "Resumo gerado",
+                "reportUrl": "https://read.ai/report/meet-123",
+            }
+        },
+        received_at="2026-05-22T10:00:00-03:00",
+    )
+
+    assert row["received_at"] == "2026-05-22T10:00:00-03:00"
+    assert row["meeting_id"] == "meet-123"
+    assert row["title"] == "Monitoria Read IA"
+    assert row["summary"] == "Resumo gerado"
+    assert row["report_url"] == "https://read.ai/report/meet-123"
+    assert json.loads(row["payload_json"])["meeting"]["meetingId"] == "meet-123"

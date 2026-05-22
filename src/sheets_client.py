@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,7 +14,15 @@ from google.oauth2 import service_account
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 
-SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
+SCOPES = ("https://www.googleapis.com/auth/spreadsheets",)
+READIA_PAYLOAD_COLUMNS = (
+    "received_at",
+    "meeting_id",
+    "title",
+    "summary",
+    "report_url",
+    "payload_json",
+)
 
 HEADER_ALIASES = {
     "nome": "nome",
@@ -52,6 +61,7 @@ class SheetsSettings:
     sheet_presentes: str
     sheet_ativos: str
     default_agente: str
+    sheet_readia_payloads: str = "ReadIA Payloads"
 
 
 def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> list[dict[str, Any]]:
@@ -98,6 +108,67 @@ def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> li
     return rows
 
 
+def append_readia_payload(row: Mapping[str, Any]) -> None:
+    """Append one sanitized Read IA webhook payload to Google Sheets."""
+    settings = load_sheets_settings()
+    service = _build_sheets_service(settings.service_account_file)
+    sheet_name = settings.sheet_readia_payloads
+
+    _ensure_readia_payload_sheet(service, settings.spreadsheet_id, sheet_name)
+    _append_sheet_values(
+        service,
+        settings.spreadsheet_id,
+        sheet_name,
+        [[_clean_cell(row.get(column, "")) for column in READIA_PAYLOAD_COLUMNS]],
+    )
+
+
+def read_readia_payload_rows(limit: int | None = None) -> list[dict[str, Any]]:
+    """Read Read IA payload rows from the configured Google Sheets tab."""
+    settings = load_sheets_settings()
+    service = _build_sheets_service(settings.service_account_file)
+
+    try:
+        values = _get_sheet_values(
+            service,
+            settings.spreadsheet_id,
+            settings.sheet_readia_payloads,
+        )
+    except HttpError as exc:
+        if _is_missing_sheet_error(exc):
+            print(
+                "AVISO - aba de payloads Read IA nao encontrada no Google Sheets: "
+                f"{settings.sheet_readia_payloads}"
+            )
+            return []
+        raise
+
+    if not values:
+        return []
+
+    headers = [_clean_cell(header) for header in values[0]]
+    rows: list[dict[str, Any]] = []
+
+    for raw_row in values[1:]:
+        if _is_empty_row(raw_row):
+            continue
+
+        row = {}
+        for index, header in enumerate(headers):
+            if not header:
+                continue
+            row[header] = _clean_cell(raw_row[index]) if index < len(raw_row) else ""
+        rows.append(row)
+
+    if limit == 0:
+        return []
+
+    if limit is not None and limit > 0:
+        return rows[-limit:]
+
+    return rows
+
+
 def load_sheets_settings() -> SheetsSettings:
     """Load Google Sheets settings from `.env`."""
     load_dotenv()
@@ -111,6 +182,10 @@ def load_sheets_settings() -> SheetsSettings:
         sheet_presentes=os.getenv("SHEET_PRESENTES", "Presentes").strip() or "Presentes",
         sheet_ativos=os.getenv("SHEET_ATIVOS", "Ativo").strip() or "Ativo",
         default_agente=os.getenv("DEFAULT_AGENTE", "").strip(),
+        sheet_readia_payloads=(
+            os.getenv("SHEET_READIA_PAYLOADS", "ReadIA Payloads").strip()
+            or "ReadIA Payloads"
+        ),
     )
 
 
@@ -130,15 +205,103 @@ def _build_sheets_service(service_account_file: str) -> Any:
 
 
 def _get_sheet_values(service: Any, spreadsheet_id: str, sheet_name: str) -> list[list[Any]]:
-    escaped_sheet_name = sheet_name.replace("'", "''")
-    range_name = f"'{escaped_sheet_name}'!A:ZZ"
     result = (
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=spreadsheet_id, range=range_name)
+        .get(spreadsheetId=spreadsheet_id, range=_sheet_range(sheet_name, "A:ZZ"))
         .execute()
     )
     return result.get("values", [])
+
+
+def _ensure_readia_payload_sheet(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+) -> None:
+    created = _ensure_sheet_exists(service, spreadsheet_id, sheet_name)
+    if created:
+        print(
+            "AVISO - aba de payloads Read IA nao existia no Google Sheets; "
+            f"criada: {sheet_name}"
+        )
+
+    header = _get_sheet_header(service, spreadsheet_id, sheet_name)
+    if not header:
+        _set_sheet_header(service, spreadsheet_id, sheet_name)
+        return
+
+    expected_header = list(READIA_PAYLOAD_COLUMNS)
+    current_header = [_clean_cell(cell) for cell in header[: len(expected_header)]]
+    if current_header != expected_header:
+        print(
+            "AVISO - cabecalho da aba de payloads Read IA difere do esperado. "
+            f"Esperado: {', '.join(expected_header)}"
+        )
+
+
+def _ensure_sheet_exists(service: Any, spreadsheet_id: str, sheet_name: str) -> bool:
+    metadata = (
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets.properties.title")
+        .execute()
+    )
+    titles = {
+        sheet.get("properties", {}).get("title", "")
+        for sheet in metadata.get("sheets", [])
+    }
+    if sheet_name in titles:
+        return False
+
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": [{"addSheet": {"properties": {"title": sheet_name}}}]},
+    ).execute()
+    return True
+
+
+def _get_sheet_header(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+) -> list[Any]:
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range=_sheet_range(sheet_name, "A1:F1"))
+        .execute()
+    )
+    values = result.get("values", [])
+    return values[0] if values else []
+
+
+def _set_sheet_header(service: Any, spreadsheet_id: str, sheet_name: str) -> None:
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=_sheet_range(sheet_name, "A1:F1"),
+        valueInputOption="RAW",
+        body={"values": [list(READIA_PAYLOAD_COLUMNS)]},
+    ).execute()
+
+
+def _append_sheet_values(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+    values: list[list[Any]],
+) -> None:
+    service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=_sheet_range(sheet_name, "A:F"),
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body={"values": values},
+    ).execute()
+
+
+def _sheet_range(sheet_name: str, cell_range: str) -> str:
+    escaped_sheet_name = sheet_name.replace("'", "''")
+    return f"'{escaped_sheet_name}'!{cell_range}"
 
 
 def _is_missing_sheet_error(exc: HttpError) -> bool:

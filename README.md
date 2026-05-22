@@ -54,9 +54,10 @@ python -m src.inspect_form
 
 ## Webhook Read IA
 
-O webhook Flask recebe payloads do Read IA e salva os arquivos em
-`data/read_payloads/`. Os JSONs recebidos ficam ignorados pelo Git; apenas o
-`.gitkeep` da pasta e versionado.
+O webhook Flask recebe payloads do Read IA, salva os arquivos em
+`data/read_payloads/` e tambem registra cada payload na aba configurada por
+`SHEET_READIA_PAYLOADS` no Google Sheets. Os JSONs recebidos ficam ignorados
+pelo Git; apenas o `.gitkeep` da pasta e versionado.
 
 Para rodar localmente:
 
@@ -75,6 +76,12 @@ Para testar os payloads salvos:
 
 ```bash
 python -m src.inspect_readia_payloads
+```
+
+Para conferir os ultimos payloads salvos no Google Sheets:
+
+```bash
+python -m src.inspect_readia_sheet
 ```
 
 Para o Read IA enviar dados para sua maquina local, sera necessario expor essa

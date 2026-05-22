@@ -12,8 +12,14 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, request
 
+from src.sheets_client import append_readia_payload
+
 PAYLOAD_DIR = Path("data/read_payloads")
 SAO_PAULO_TZ = ZoneInfo("America/Sao_Paulo")
+MEETING_ID_KEYS = ("meeting_id", "meetingId", "session_id", "sessionId", "id")
+TITLE_KEYS = ("title", "meeting_title", "meetingTitle")
+SUMMARY_KEYS = ("summary", "report_summary", "reportSummary")
+REPORT_URL_KEYS = ("report_url", "reportUrl", "url", "report_link", "reportLink")
 SECRET_KEYWORDS = (
     "api_key",
     "apikey",
@@ -57,7 +63,7 @@ def handle_readia_webhook(
     payload: Mapping[str, Any],
     *,
     headers: Mapping[str, Any] | None = None,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Save a sanitized Read IA webhook payload with request metadata."""
     PAYLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -77,7 +83,42 @@ def handle_readia_webhook(
         encoding="utf-8",
     )
 
-    return {"status": "saved", "path": str(file_path)}
+    sheet_row = build_readia_payload_row(sanitized_payload, received_at=received_at)
+    sheet_status, sheet_error = _append_payload_to_sheet(sheet_row)
+    result = {"status": "saved", "path": str(file_path), "sheet_status": sheet_status}
+    if sheet_error:
+        result["sheet_error"] = sheet_error
+    return result
+
+
+def build_readia_payload_row(
+    payload: Mapping[str, Any],
+    *,
+    received_at: str,
+) -> dict[str, str]:
+    """Build the Google Sheets row for a sanitized Read IA payload."""
+    return {
+        "received_at": received_at,
+        "meeting_id": _clean_sheet_value(_find_first_value(payload, MEETING_ID_KEYS)),
+        "title": _clean_sheet_value(_find_first_value(payload, TITLE_KEYS)),
+        "summary": _clean_sheet_value(_find_first_value(payload, SUMMARY_KEYS)),
+        "report_url": _clean_sheet_value(_find_first_value(payload, REPORT_URL_KEYS)),
+        "payload_json": json.dumps(payload, ensure_ascii=False),
+    }
+
+
+def _append_payload_to_sheet(row: Mapping[str, Any]) -> tuple[str, str | None]:
+    try:
+        append_readia_payload(row)
+    except Exception as exc:
+        message = (
+            "AVISO - payload Read IA salvo localmente, mas falhou ao salvar "
+            f"no Google Sheets: {exc}"
+        )
+        print(message)
+        return "error", str(exc)
+
+    return "saved", None
 
 
 def _remove_secrets(value: Any) -> Any:
@@ -97,29 +138,32 @@ def _remove_secrets(value: Any) -> Any:
 
 
 def _extract_session_id(payload: Mapping[str, Any]) -> str | None:
-    for key in ("session_id", "sessionId", "meeting_id", "meetingId", "id"):
-        value = _find_value(payload, key)
-        if value:
-            return _safe_filename_part(str(value))
+    value = _find_first_value(payload, MEETING_ID_KEYS)
+    if value:
+        return _safe_filename_part(str(value))
 
     return None
 
 
-def _find_value(value: Any, target_key: str) -> Any:
+def _find_first_value(value: Any, target_keys: tuple[str, ...]) -> Any:
     if isinstance(value, Mapping):
-        for key, item in value.items():
-            if str(key) == target_key:
-                return item
+        for target_key in target_keys:
+            for key, item in value.items():
+                if str(key).casefold() == target_key.casefold() and item not in (
+                    None,
+                    "",
+                ):
+                    return item
 
         for item in value.values():
-            found = _find_value(item, target_key)
-            if found is not None:
+            found = _find_first_value(item, target_keys)
+            if found not in (None, ""):
                 return found
 
     if isinstance(value, list):
         for item in value:
-            found = _find_value(item, target_key)
-            if found is not None:
+            found = _find_first_value(item, target_keys)
+            if found not in (None, ""):
                 return found
 
     return None
@@ -146,6 +190,14 @@ def _next_available_path(path: Path) -> Path:
 
 def _safe_filename_part(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")[:80]
+
+
+def _clean_sheet_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (Mapping, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value).strip()
 
 
 if __name__ == "__main__":
