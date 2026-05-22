@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import unicodedata
@@ -53,7 +54,7 @@ HEADER_ALIASES = {
 class SheetsSettings:
     """Google Sheets settings loaded from environment variables."""
 
-    service_account_file: str
+    service_account_file: str | None
     spreadsheet_id: str
     sheet_nao_agendados: str
     sheet_finalizados: str
@@ -62,12 +63,14 @@ class SheetsSettings:
     sheet_ativos: str
     default_agente: str
     sheet_readia_payloads: str = "ReadIA Payloads"
+    service_account_json: str | None = None
 
 
 def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> list[dict[str, Any]]:
     """Read and normalize rows from a Google Sheets tab.
 
     Configuration is loaded from `.env`:
+        GOOGLE_SERVICE_ACCOUNT_JSON: complete service account JSON content.
         GOOGLE_SERVICE_ACCOUNT_FILE: service account JSON file path.
         GOOGLE_SPREADSHEET_ID: target spreadsheet id.
         DEFAULT_AGENTE: fallback agent when the row does not include one.
@@ -81,7 +84,7 @@ def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> li
     """
     settings = load_sheets_settings()
 
-    service = _build_sheets_service(settings.service_account_file)
+    service = _build_sheets_service(settings)
     try:
         values = _get_sheet_values(service, settings.spreadsheet_id, sheet_name)
     except HttpError as exc:
@@ -111,7 +114,7 @@ def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> li
 def append_readia_payload(row: Mapping[str, Any]) -> None:
     """Append one sanitized Read IA webhook payload to Google Sheets."""
     settings = load_sheets_settings()
-    service = _build_sheets_service(settings.service_account_file)
+    service = _build_sheets_service(settings)
     sheet_name = settings.sheet_readia_payloads
 
     _ensure_readia_payload_sheet(service, settings.spreadsheet_id, sheet_name)
@@ -126,7 +129,7 @@ def append_readia_payload(row: Mapping[str, Any]) -> None:
 def read_readia_payload_rows(limit: int | None = None) -> list[dict[str, Any]]:
     """Read Read IA payload rows from the configured Google Sheets tab."""
     settings = load_sheets_settings()
-    service = _build_sheets_service(settings.service_account_file)
+    service = _build_sheets_service(settings)
 
     try:
         values = _get_sheet_values(
@@ -173,8 +176,16 @@ def load_sheets_settings() -> SheetsSettings:
     """Load Google Sheets settings from `.env`."""
     load_dotenv()
 
+    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    service_account_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+    if not service_account_json and not service_account_file:
+        raise RuntimeError(
+            "Missing required environment variable: "
+            "GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE"
+        )
+
     return SheetsSettings(
-        service_account_file=_required_env("GOOGLE_SERVICE_ACCOUNT_FILE"),
+        service_account_file=service_account_file or None,
         spreadsheet_id=_required_env("GOOGLE_SPREADSHEET_ID"),
         sheet_nao_agendados=_required_env("SHEET_NAO_AGENDADOS"),
         sheet_finalizados=_required_env("SHEET_FINALIZADOS"),
@@ -186,6 +197,7 @@ def load_sheets_settings() -> SheetsSettings:
             os.getenv("SHEET_READIA_PAYLOADS", "ReadIA Payloads").strip()
             or "ReadIA Payloads"
         ),
+        service_account_json=service_account_json or None,
     )
 
 
@@ -196,12 +208,50 @@ def _required_env(name: str) -> str:
     return value
 
 
-def _build_sheets_service(service_account_file: str) -> Any:
-    credentials = service_account.Credentials.from_service_account_file(
-        service_account_file,
-        scopes=SCOPES,
+def _build_sheets_service(settings_or_file: SheetsSettings | str | None) -> Any:
+    if isinstance(settings_or_file, SheetsSettings):
+        service_account_file = settings_or_file.service_account_file
+        service_account_json = settings_or_file.service_account_json
+    else:
+        service_account_file = settings_or_file
+        service_account_json = None
+
+    credentials = _build_service_account_credentials(
+        service_account_file=service_account_file,
+        service_account_json=service_account_json,
     )
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
+
+
+def _build_service_account_credentials(
+    *,
+    service_account_file: str | None,
+    service_account_json: str | None,
+) -> service_account.Credentials:
+    if service_account_json:
+        try:
+            service_account_info = json.loads(service_account_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Invalid GOOGLE_SERVICE_ACCOUNT_JSON: expected complete service "
+                "account JSON content."
+            ) from exc
+
+        return service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES,
+        )
+
+    if service_account_file:
+        return service_account.Credentials.from_service_account_file(
+            service_account_file,
+            scopes=SCOPES,
+        )
+
+    raise RuntimeError(
+        "Missing required environment variable: "
+        "GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE"
+    )
 
 
 def _get_sheet_values(service: Any, spreadsheet_id: str, sheet_name: str) -> list[list[Any]]:

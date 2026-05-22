@@ -29,8 +29,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Copie `.env.example` para `.env`, preencha `GOOGLE_SPREADSHEET_ID` e coloque a
-credencial da service account em `credentials/google-service-account.json`.
+Copie `.env.example` para `.env` e preencha `GOOGLE_SPREADSHEET_ID`. Para a
+credencial da service account, use uma das opcoes:
+
+- `GOOGLE_SERVICE_ACCOUNT_JSON`: conteudo completo do JSON da service account.
+- `GOOGLE_SERVICE_ACCOUNT_FILE`: caminho para o arquivo JSON local, por exemplo
+  `credentials/google-service-account.json`.
+
+Quando `GOOGLE_SERVICE_ACCOUNT_JSON` estiver preenchida, ela tem prioridade
+sobre `GOOGLE_SERVICE_ACCOUNT_FILE`.
 
 Exemplo de abas e agenda no `.env`:
 
@@ -90,6 +97,18 @@ porta com ngrok ou hospedar o webhook em um servidor acessivel pela internet.
 ## Deploy Render
 
 Crie um Web Service no Render e conecte o repositorio do GitHub.
+
+Configure as variaveis de ambiente no Render. Para as credenciais do Google,
+use:
+
+```env
+GOOGLE_SERVICE_ACCOUNT_JSON={...conteudo completo do JSON da service account...}
+```
+
+O valor deve ser o JSON completo baixado da service account, incluindo chaves
+como `type`, `project_id`, `private_key`, `client_email` e `token_uri`. No
+Render nao e necessario criar o arquivo `credentials/google-service-account.json`
+quando `GOOGLE_SERVICE_ACCOUNT_JSON` estiver configurada.
 
 Build:
 
