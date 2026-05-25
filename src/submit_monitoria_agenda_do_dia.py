@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import csv
-import re
 import sys
-import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.course_detection import (
+    CURSO_NAO_CONSUMIU,
+    describe_consumed_courses_from_text,
+    detect_consumed_courses_from_text,
+)
 from src.models import MonitoriaPayload
 from src.preview_monitoria_agenda_do_dia import PREVIEW_DIR
 from src.submission_runner import (
@@ -25,30 +28,7 @@ from src.submission_runner import (
 STATUS_PRESENTE = "Presente"
 STATUS_FALTA = "Falta"
 MOTIVO_SEM_RESPOSTA = "Sem resposta"
-CURSO_NAO_CONSUMIU = "Não consumiu"
 RELATORIO_READIA_INDISPONIVEL = "Resumo não disponível"
-COURSE_NAMES = [
-    "Scratch",
-    "No Code",
-    "Introdução à Web",
-    "Linux",
-    "Python I",
-    "JavaScript",
-    "Banco de Dados",
-    "Programação Orientada a Objetos",
-    "Python II",
-    "Fundamentos de interface",
-    "Desenvolvimento de websites com mentalidade ágil",
-    "Desenvolvimento de Interfaces Web Frameworks Front-End",
-    "React JS",
-    "Programação Multiplataforma com React Native",
-    "Programação Multiplataforma com Flutter",
-    "Padrão de Projeto de Software",
-    "Desenvolvimento de APIs RESTful",
-    "Desenvolvimento Nativo para Android",
-    "Framework Full Stack para Web",
-    "Teste de Software para Web",
-]
 
 
 def submit_monitoria_agenda_do_dia(
@@ -211,11 +191,12 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
     }
     if status == STATUS_PRESENTE:
         relatorio_readia = _readia_report(row)
+        course_detection = describe_consumed_courses_from_text(relatorio_readia)
         base_row.update(
             {
                 "relatorio_readia": relatorio_readia,
                 "link_readia": row.get("readia_report_url", ""),
-                "cursos_consumidos": detect_courses_from_text(relatorio_readia),
+                "cursos_consumidos": course_detection.courses,
             }
         )
     elif status == STATUS_FALTA:
@@ -232,31 +213,7 @@ def _readia_report(row: dict[str, str]) -> str:
 
 
 def detect_courses_from_text(text: Any) -> list[str]:
-    normalized_text = _normalize_search_text(text)
-    if not normalized_text:
-        return [CURSO_NAO_CONSUMIU]
-
-    detected = [
-        course
-        for course in COURSE_NAMES
-        if re.search(
-            rf"(?<!\w){re.escape(_normalize_search_text(course))}(?!\w)",
-            normalized_text,
-        )
-    ]
-    return detected or [CURSO_NAO_CONSUMIU]
-
-
-def _normalize_search_text(value: Any) -> str:
-    normalized = str(value or "").strip().casefold()
-    normalized = unicodedata.normalize("NFKD", normalized)
-    normalized = "".join(
-        character
-        for character in normalized
-        if not unicodedata.combining(character)
-    )
-    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
+    return detect_consumed_courses_from_text(str(text or ""))
 
 
 def _dry_run_payload(payload: MonitoriaPayload) -> dict[str, Any]:
@@ -266,11 +223,13 @@ def _dry_run_payload(payload: MonitoriaPayload) -> dict[str, Any]:
         "status": payload.status,
     }
     if payload.status == STATUS_PRESENTE:
+        course_detection = describe_consumed_courses_from_text(payload.relatorio_readia)
         data.update(
             {
                 "relatorio_readia": _preview_text(payload.relatorio_readia, 120),
                 "link_readia": payload.link_readia or "",
                 "cursos_consumidos": payload.cursos_consumidos,
+                "motivo_deteccao_curso": course_detection.reason,
             }
         )
     if payload.status == STATUS_FALTA:

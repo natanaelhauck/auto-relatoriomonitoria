@@ -61,14 +61,16 @@ def test_presente_confirmado_preenche_readia_summary() -> None:
         [
             _meeting(
                 title="Monitoria PDITA123 and Natanael Hauck",
-                summary="Resumo Read IA da aula.",
+                summary="Aluno consumiu Banco de Dados.",
             )
         ],
         "2026-05-21",
     )
 
     assert rows[0]["status"] == "Presente"
-    assert rows[0]["readia_summary"] == "Resumo Read IA da aula."
+    assert rows[0]["readia_summary"] == "Aluno consumiu Banco de Dados."
+    assert rows[0]["cursos_consumidos"] == "Banco de Dados"
+    assert "consumiu" in rows[0]["motivo_deteccao_curso"]
 
 
 def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src.calendar_client import get_events_for_date, parse_student_from_calendar_title
+from src.course_detection import describe_consumed_courses_from_text
 from src.readia_matcher import (
     MatchResult,
     best_match_calendar_event_to_meetings,
@@ -33,6 +34,8 @@ CSV_FIELDS = [
     "readia_title",
     "readia_summary",
     "readia_report_url",
+    "cursos_consumidos",
+    "motivo_deteccao_curso",
     "observacao",
 ]
 DEBUG_CSV_FIELDS = [
@@ -227,11 +230,16 @@ def _matched_event_row(
         status = "Presente"
         observacao = "match confirmado"
         readia_summary = match.meeting.get("summary", "")
+        course_detection = describe_consumed_courses_from_text(readia_summary)
+        cursos_consumidos = ", ".join(course_detection.courses)
+        motivo_deteccao_curso = course_detection.reason
     else:
         categoria = "matches_fracos"
         status = "Falta"
         observacao = "score abaixo de 50; revisar antes de enviar"
         readia_summary = ""
+        cursos_consumidos = ""
+        motivo_deteccao_curso = ""
 
     return _base_row(
         event,
@@ -244,6 +252,8 @@ def _matched_event_row(
         readia_title=match.meeting.get("title", ""),
         readia_summary=readia_summary,
         readia_report_url=match.meeting.get("report_url", ""),
+        cursos_consumidos=cursos_consumidos,
+        motivo_deteccao_curso=motivo_deteccao_curso,
         observacao=observacao,
     )
 
@@ -291,6 +301,8 @@ def _base_row(
     readia_title: str = "",
     readia_summary: str = "",
     readia_report_url: str = "",
+    cursos_consumidos: str = "",
+    motivo_deteccao_curso: str = "",
 ) -> dict[str, Any]:
     return {
         "data": report_date,
@@ -306,6 +318,8 @@ def _base_row(
         "readia_title": readia_title,
         "readia_summary": readia_summary,
         "readia_report_url": readia_report_url,
+        "cursos_consumidos": cursos_consumidos,
+        "motivo_deteccao_curso": motivo_deteccao_curso,
         "observacao": observacao,
     }
 

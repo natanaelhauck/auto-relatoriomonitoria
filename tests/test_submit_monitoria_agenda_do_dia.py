@@ -4,6 +4,9 @@ import csv
 import shutil
 from pathlib import Path
 
+import pytest
+
+from src.course_detection import detect_consumed_courses_from_text
 from src import submit_monitoria_agenda_do_dia as submit_agenda
 
 
@@ -53,6 +56,7 @@ def test_submit_agenda_dry_run_envia_presentes_e_faltas(capsys) -> None:
     assert "'relatorio_readia': 'Resumo Read IA'" in output
     assert "'link_readia': 'https://read.ai/report/1'" in output
     assert "'cursos_consumidos': ['Não consumiu']" in output
+    assert "'motivo_deteccao_curso':" in output
     assert "'status': 'Falta'" in output
     assert "'motivo_falta': 'Sem resposta'" in output
     assert "Aluno Revisar" not in output
@@ -70,7 +74,7 @@ def test_submit_agenda_detecta_cursos_pelo_resumo_readia(capsys) -> None:
                     "nome": "Aluno Curso",
                     "matricula": "PDITA010",
                     "readia_summary": (
-                        "O aluno revisou Banco de Dados e Python II na monitoria."
+                        "O aluno consumiu Banco de Dados e assistiu Python intermediário."
                     ),
                     "readia_report_url": "https://read.ai/report/course",
                 },
@@ -90,10 +94,32 @@ def test_submit_agenda_detecta_cursos_pelo_resumo_readia(capsys) -> None:
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "'cursos_consumidos': ['Banco de Dados', 'Python II']" in output
+    assert "'motivo_deteccao_curso':" in output
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Aluno consumiu Banco de Dados", ["Banco de Dados"]),
+        ("Aluno assistiu Python intermediário", ["Python II"]),
+        ("Meta para próxima semana Banco de Dados", ["Não consumiu"]),
+        ("Foi orientado a assistir Fundamentos de interface", ["Não consumiu"]),
+        (
+            "Perguntei se consumiu Python intermediário e passei como meta Banco de Dados",
+            ["Python II"],
+        ),
+        ("Texto sem curso", ["Não consumiu"]),
+    ],
+)
+def test_detect_consumed_courses_from_text_casos_obrigatorios(
+    text: str,
+    expected: list[str],
+) -> None:
+    assert detect_consumed_courses_from_text(text) == expected
 
 
 def test_detect_courses_from_text_nao_confunde_python_i_com_python_ii() -> None:
-    courses = submit_agenda.detect_courses_from_text("Foi estudado Python II.")
+    courses = submit_agenda.detect_courses_from_text("Aluno estudou Python II.")
 
     assert courses == ["Python II"]
 
