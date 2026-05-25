@@ -148,6 +148,7 @@ def run_prepared_batch(
     duplicate_scope: str = "weekly",
     log_dir: Path = SUBMISSION_LOG_DIR,
     submitter: Callable[[MonitoriaPayload], Any] = submit_monitoria,
+    dry_run_formatter: Callable[[MonitoriaPayload], Any] | None = None,
 ) -> int:
     """Process already built payloads with optional duplicate skipping."""
     ignored_rows = ignored_rows or []
@@ -187,7 +188,12 @@ def run_prepared_batch(
 
     if dry_run:
         for payload in payloads_to_send:
-            print(f"[DRY-RUN] {asdict(payload)}")
+            dry_run_payload = (
+                dry_run_formatter(payload)
+                if dry_run_formatter is not None
+                else asdict(payload)
+            )
+            print(f"[DRY-RUN] {dry_run_payload}")
         return 1 if ignored_rows else 0
 
     if not payloads_to_send:

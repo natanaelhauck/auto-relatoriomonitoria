@@ -58,6 +58,46 @@ def test_submit_agenda_dry_run_envia_presentes_e_faltas(capsys) -> None:
     assert "Aluno Revisar" not in output
 
 
+def test_submit_agenda_detecta_cursos_pelo_resumo_readia(capsys) -> None:
+    preview_dir = _make_dir("tests/_tmp_agenda_preview_courses")
+    log_dir = _make_dir("tests/_tmp_agenda_logs_courses")
+    try:
+        _write_preview(
+            preview_dir,
+            [
+                {
+                    "status": "Presente",
+                    "nome": "Aluno Curso",
+                    "matricula": "PDITA010",
+                    "readia_summary": (
+                        "O aluno revisou Banco de Dados e Python II na monitoria."
+                    ),
+                    "readia_report_url": "https://read.ai/report/course",
+                },
+            ],
+        )
+
+        exit_code = submit_agenda.submit_monitoria_agenda_do_dia(
+            dry_run=True,
+            report_date="2026-05-22",
+            preview_dir=preview_dir,
+            log_dir=log_dir,
+        )
+    finally:
+        shutil.rmtree(preview_dir, ignore_errors=True)
+        shutil.rmtree(log_dir, ignore_errors=True)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "'cursos_consumidos': ['Banco de Dados', 'Python II']" in output
+
+
+def test_detect_courses_from_text_nao_confunde_python_i_com_python_ii() -> None:
+    courses = submit_agenda.detect_courses_from_text("Foi estudado Python II.")
+
+    assert courses == ["Python II"]
+
+
 def test_submit_agenda_filtros_presentes_only_e_only_matricula(capsys) -> None:
     preview_dir = _make_dir("tests/_tmp_agenda_preview_filter")
     log_dir = _make_dir("tests/_tmp_agenda_logs_filter")

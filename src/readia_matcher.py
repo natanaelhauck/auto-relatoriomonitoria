@@ -14,6 +14,16 @@ from typing import Any
 
 PAYLOAD_DIR = Path("data/read_payloads")
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+SUMMARY_KEYS = (
+    "summary",
+    "report_summary",
+    "transcript_summary",
+    "meeting_summary",
+    "notes",
+    "text",
+    "transcript",
+)
+SUMMARY_FALLBACK_MAX_LENGTH = 1500
 
 
 @dataclass(frozen=True)
@@ -90,6 +100,8 @@ def normalize_readia_sheet_row(row: Mapping[str, Any]) -> dict[str, Any]:
     ):
         value = _clean_scalar(row.get(source_key))
         if value:
+            if meeting_key == "summary" and meeting.get("summary"):
+                continue
             meeting[meeting_key] = value
 
     meeting["payload_json"] = payload_json or meeting.get("payload_json", "")
@@ -110,13 +122,13 @@ def normalize_readia_payload(document: Any) -> dict[str, Any]:
         payload,
         ("meeting_id", "meetingId", "session_id", "sessionId", "id"),
     )
-    summary = _find_first(payload, ("summary", "report_summary"))
+    payload_json = _json_text(payload)
+    summary = _summary_from_payload(payload, payload_json)
     report_url = _find_first(payload, ("report_url", "url"))
     raw_text = _find_first(payload, ("raw_text",))
     participants_value = _find_first(payload, ("participants", "attendees"))
     explicit_emails = _find_first(payload, ("emails",))
     date_value = _find_first(payload, ("start_time", "created_at", "date"))
-    payload_json = _json_text(payload)
 
     participants = _string_list(participants_value)
     email_sources = [participants_value, explicit_emails, payload]
@@ -264,6 +276,30 @@ def _find_first(value: Any, keys: tuple[str, ...]) -> Any:
                 return found
 
     return None
+
+
+def _summary_from_payload(payload: Any, payload_json: str) -> str:
+    summary = _find_first(payload, SUMMARY_KEYS)
+    summary_text = _clean_scalar(summary)
+    if summary_text:
+        return summary_text
+
+    return _payload_json_summary(payload_json)
+
+
+def _payload_json_summary(payload_json: str) -> str:
+    text = _useful_text(payload_json)
+    if not text:
+        return ""
+    return text[:SUMMARY_FALLBACK_MAX_LENGTH]
+
+
+def _useful_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def _extract_date(value: Any) -> str:

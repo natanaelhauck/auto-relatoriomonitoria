@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from src.readia_matcher import (
     score_calendar_event_to_meeting,
 )
 from src.sheets_client import read_readia_payload_rows
-from src.submission_runner import _today_sao_paulo, parse_report_date
+from src.submission_runner import SAO_PAULO_TZ, _today_sao_paulo, parse_report_date
 
 PREVIEW_DIR = Path("data/previews")
 CSV_FIELDS = [
@@ -77,6 +78,7 @@ def preview_monitoria_agenda_do_dia(
     print(f"Presentes confirmados: {counts['presentes_confirmados']}")
     print(f"Matches fracos: {counts['matches_fracos']}")
     print(f"Faltas candidatas: {counts['faltas_candidatas']}")
+    print(f"Eventos futuros: {counts['eventos_futuros']}")
     print(f"Caminho CSV: {csv_path}")
     if meetings and counts["presentes_confirmados"] == 0:
         debug_rows = build_debug_readia_match_rows(events, meetings, target_date)
@@ -100,6 +102,10 @@ def build_agenda_preview_rows(
         parsed_student = parse_student_from_calendar_title(str(event.get("title", "")))
         if parsed_student is None:
             rows.append(_unparsed_event_row(event, report_date))
+            continue
+
+        if _is_future_event(event, report_date):
+            rows.append(_future_event_row(event, parsed_student, report_date))
             continue
 
         calendar_subject = {
@@ -220,10 +226,12 @@ def _matched_event_row(
         categoria = "presentes_confirmados"
         status = "Presente"
         observacao = "match confirmado"
+        readia_summary = match.meeting.get("summary", "")
     else:
         categoria = "matches_fracos"
         status = "Falta"
         observacao = "score abaixo de 50; revisar antes de enviar"
+        readia_summary = ""
 
     return _base_row(
         event,
@@ -234,7 +242,7 @@ def _matched_event_row(
         match_confidence=match.confidence,
         match_type=match.match_type,
         readia_title=match.meeting.get("title", ""),
-        readia_summary=match.meeting.get("summary", ""),
+        readia_summary=readia_summary,
         readia_report_url=match.meeting.get("report_url", ""),
         observacao=observacao,
     )
@@ -250,6 +258,23 @@ def _unparsed_event_row(event: dict[str, Any], report_date: str) -> dict[str, An
         match_confidence=0,
         match_type="sem_matricula_no_titulo",
         observacao="evento sem nome/matricula reconhecivel no titulo",
+    )
+
+
+def _future_event_row(
+    event: dict[str, Any],
+    student: dict[str, str],
+    report_date: str,
+) -> dict[str, Any]:
+    return _base_row(
+        event,
+        student,
+        report_date,
+        categoria="eventos_futuros",
+        status="Revisar",
+        match_confidence=0,
+        match_type="evento_futuro",
+        observacao="evento ainda nao aconteceu",
     )
 
 
@@ -325,12 +350,43 @@ def _category_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         "matches_fracos": 0,
         "faltas_candidatas": 0,
         "eventos_nao_parseados": 0,
+        "eventos_futuros": 0,
     }
     for row in rows:
         categoria = str(row.get("categoria", ""))
         if categoria in counts:
             counts[categoria] += 1
     return counts
+
+
+def _is_future_event(event: dict[str, Any], report_date: str) -> bool:
+    if report_date != _today_sao_paulo():
+        return False
+
+    start = _parse_datetime(event.get("start"))
+    if start is None:
+        return False
+
+    return start > _now_sao_paulo()
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=SAO_PAULO_TZ)
+    return parsed.astimezone(SAO_PAULO_TZ)
+
+
+def _now_sao_paulo() -> datetime:
+    return datetime.now(SAO_PAULO_TZ)
 
 
 def main() -> None:

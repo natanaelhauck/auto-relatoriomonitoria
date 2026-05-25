@@ -1,6 +1,8 @@
 """Tests for Google Calendar based monitoring preview."""
 
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from src import calendar_client
 from src import preview_monitoria_agenda_do_dia as agenda_preview
@@ -48,6 +50,27 @@ def test_evento_com_matricula_no_readia_vira_presente() -> None:
     assert rows[0]["match_type"] == "matricula"
 
 
+def test_presente_confirmado_preenche_readia_summary() -> None:
+    rows = build_agenda_preview_rows(
+        [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start="2026-05-21T10:00:00-03:00",
+            )
+        ],
+        [
+            _meeting(
+                title="Monitoria PDITA123 and Natanael Hauck",
+                summary="Resumo Read IA da aula.",
+            )
+        ],
+        "2026-05-21",
+    )
+
+    assert rows[0]["status"] == "Presente"
+    assert rows[0]["readia_summary"] == "Resumo Read IA da aula."
+
+
 def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:
     rows = build_agenda_preview_rows(
         [
@@ -82,6 +105,7 @@ def test_evento_com_primeiro_segundo_nome_vira_match_fraco_falta() -> None:
     assert rows[0]["status"] == "Falta"
     assert rows[0]["match_confidence"] == 30
     assert rows[0]["match_type"] == "primeiro_segundo_nome"
+    assert rows[0]["readia_summary"] == ""
 
 
 def test_evento_sem_readia_vira_falta_candidata() -> None:
@@ -95,6 +119,30 @@ def test_evento_sem_readia_vira_falta_candidata() -> None:
     assert rows[0]["status"] == "Falta"
     assert rows[0]["matricula"] == "PDITA123"
     assert rows[0]["match_type"] == "sem_match"
+
+
+def test_evento_futuro_do_dia_vira_revisar(monkeypatch) -> None:
+    monkeypatch.setattr(agenda_preview, "_today_sao_paulo", lambda: "2026-05-25")
+    monkeypatch.setattr(
+        agenda_preview,
+        "_now_sao_paulo",
+        lambda: datetime(2026, 5, 25, 13, 30, tzinfo=ZoneInfo("America/Sao_Paulo")),
+    )
+
+    rows = build_agenda_preview_rows(
+        [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start="2026-05-25T14:00:00-03:00",
+            )
+        ],
+        [],
+        "2026-05-25",
+    )
+
+    assert rows[0]["categoria"] == "eventos_futuros"
+    assert rows[0]["status"] == "Revisar"
+    assert rows[0]["match_type"] == "evento_futuro"
 
 
 def test_evento_sem_matricula_vai_para_nao_parseados() -> None:

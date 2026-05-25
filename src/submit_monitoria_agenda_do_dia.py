@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
-from pathlib import Path
+import unicodedata
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from src.models import MonitoriaPayload
@@ -25,6 +27,28 @@ STATUS_FALTA = "Falta"
 MOTIVO_SEM_RESPOSTA = "Sem resposta"
 CURSO_NAO_CONSUMIU = "Não consumiu"
 RELATORIO_READIA_INDISPONIVEL = "Resumo não disponível"
+COURSE_NAMES = [
+    "Scratch",
+    "No Code",
+    "Introdução à Web",
+    "Linux",
+    "Python I",
+    "JavaScript",
+    "Banco de Dados",
+    "Programação Orientada a Objetos",
+    "Python II",
+    "Fundamentos de interface",
+    "Desenvolvimento de websites com mentalidade ágil",
+    "Desenvolvimento de Interfaces Web Frameworks Front-End",
+    "React JS",
+    "Programação Multiplataforma com React Native",
+    "Programação Multiplataforma com Flutter",
+    "Padrão de Projeto de Software",
+    "Desenvolvimento de APIs RESTful",
+    "Desenvolvimento Nativo para Android",
+    "Framework Full Stack para Web",
+    "Teste de Software para Web",
+]
 
 
 def submit_monitoria_agenda_do_dia(
@@ -70,6 +94,7 @@ def submit_monitoria_agenda_do_dia(
         skip_existing=True,
         duplicate_scope="daily",
         log_dir=log_dir,
+        dry_run_formatter=_dry_run_payload,
         **kwargs,
     )
 
@@ -185,11 +210,12 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
         "matricula": row.get("matricula", ""),
     }
     if status == STATUS_PRESENTE:
+        relatorio_readia = _readia_report(row)
         base_row.update(
             {
-                "relatorio_readia": _readia_report(row),
+                "relatorio_readia": relatorio_readia,
                 "link_readia": row.get("readia_report_url", ""),
-                "cursos_consumidos": _courses_consumidos(row.get("cursos_consumidos")),
+                "cursos_consumidos": detect_courses_from_text(relatorio_readia),
             }
         )
     elif status == STATUS_FALTA:
@@ -205,13 +231,58 @@ def _readia_report(row: dict[str, str]) -> str:
     return RELATORIO_READIA_INDISPONIVEL
 
 
-def _courses_consumidos(value: Any) -> str:
-    if isinstance(value, list):
-        courses = [str(item).strip() for item in value if str(item).strip()]
-        return ", ".join(courses) if courses else CURSO_NAO_CONSUMIU
+def detect_courses_from_text(text: Any) -> list[str]:
+    normalized_text = _normalize_search_text(text)
+    if not normalized_text:
+        return [CURSO_NAO_CONSUMIU]
 
+    detected = [
+        course
+        for course in COURSE_NAMES
+        if re.search(
+            rf"(?<!\w){re.escape(_normalize_search_text(course))}(?!\w)",
+            normalized_text,
+        )
+    ]
+    return detected or [CURSO_NAO_CONSUMIU]
+
+
+def _normalize_search_text(value: Any) -> str:
+    normalized = str(value or "").strip().casefold()
+    normalized = unicodedata.normalize("NFKD", normalized)
+    normalized = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _dry_run_payload(payload: MonitoriaPayload) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "nome": payload.nome,
+        "matricula": payload.matricula,
+        "status": payload.status,
+    }
+    if payload.status == STATUS_PRESENTE:
+        data.update(
+            {
+                "relatorio_readia": _preview_text(payload.relatorio_readia, 120),
+                "link_readia": payload.link_readia or "",
+                "cursos_consumidos": payload.cursos_consumidos,
+            }
+        )
+    if payload.status == STATUS_FALTA:
+        data["motivo_falta"] = payload.motivo_falta or MOTIVO_SEM_RESPOSTA
+    return data
+
+
+def _preview_text(value: Any, max_length: int) -> str:
     text = str(value or "").strip()
-    return text or CURSO_NAO_CONSUMIU
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3]}..."
 
 
 def _form_status(value: Any) -> str:

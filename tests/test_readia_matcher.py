@@ -4,6 +4,7 @@ from src.preview_monitoria_do_dia import build_preview_rows
 from src.readia_matcher import (
     load_readia_meetings_from_sheet_rows,
     match_student_to_meeting,
+    normalize_readia_sheet_row,
 )
 
 
@@ -106,6 +107,48 @@ def test_load_readia_meetings_from_sheet_rows_normaliza_e_filtra_data() -> None:
     assert meetings[0]["date"] == "2026-05-21"
     assert meetings[0]["participants"] == ["Maria Silva"]
     assert "PDITA001" in meetings[0]["payload_json"]
+
+
+def test_normaliza_summary_em_caminhos_alternativos_do_payload_json() -> None:
+    meeting = normalize_readia_sheet_row(
+        {
+            "received_at": "2026-05-21T14:30:00-03:00",
+            "payload_json": (
+                '{"payload": {"transcript_summary": '
+                '"Resumo alternativo da monitoria"}}'
+            ),
+        }
+    )
+
+    assert meeting["summary"] == "Resumo alternativo da monitoria"
+
+
+def test_summary_do_payload_json_tem_prioridade_sobre_coluna_summary() -> None:
+    meeting = normalize_readia_sheet_row(
+        {
+            "received_at": "2026-05-21T14:30:00-03:00",
+            "summary": "Resumo antigo da coluna",
+            "payload_json": (
+                '{"payload": {"meeting_summary": '
+                '"Resumo atualizado do payload"}}'
+            ),
+        }
+    )
+
+    assert meeting["summary"] == "Resumo atualizado do payload"
+
+
+def test_normaliza_summary_com_fallback_do_payload_json() -> None:
+    long_notes = "Aula sobre Python I. " * 120
+    meeting = normalize_readia_sheet_row(
+        {
+            "received_at": "2026-05-21T14:30:00-03:00",
+            "payload_json": f'{{"details": "{long_notes}"}}',
+        }
+    )
+
+    assert meeting["summary"].startswith('{"details": "Aula sobre Python I.')
+    assert len(meeting["summary"]) == 1500
 
 
 def test_aluno_sem_match_vira_falta_candidata() -> None:
