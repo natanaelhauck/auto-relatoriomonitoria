@@ -72,6 +72,7 @@ def test_falta_monta_payload_com_motivo_sem_resposta() -> None:
     data = as_dict(build_form_data(payload))
 
     assert_base_fields(data, "Falta")
+    assert data["pageHistory"] == ["0,1"]
     assert data[FORM_FIELDS["motivo_falta"]] == ["Sem resposta"]
     assert FORM_FIELDS["relatorio_readia"] not in data
     assert FORM_FIELDS["link_readia"] not in data
@@ -88,10 +89,34 @@ def test_presente_monta_payload_com_relatorio_e_link_readia() -> None:
     data = as_dict(build_form_data(payload))
 
     assert_base_fields(data, "Presente")
+    assert data["pageHistory"] == ["0,2,3"]
     assert data[FORM_FIELDS["relatorio_readia"]] == ["Resumo da monitoria"]
     assert data[FORM_FIELDS["link_readia"]] == ["https://read.ai/report/abc"]
     assert data[FORM_FIELDS["cursos_consumidos"]["nao_consumiu"]] == ["Não assistiu"]
     assert FORM_FIELDS["motivo_falta"] not in data
+
+
+def test_presente_usa_defaults_quando_readia_ou_cursos_vazios() -> None:
+    payload = base_payload("Presente")
+
+    data = as_dict(build_form_data(payload))
+
+    assert data[FORM_FIELDS["relatorio_readia"]] == ["Resumo não disponível"]
+    assert data[FORM_FIELDS["cursos_consumidos"]["nao_consumiu"]] == ["Não assistiu"]
+    assert FORM_FIELDS["link_readia"] not in data
+
+
+def test_presente_aceita_cursos_como_string_separada_por_virgula() -> None:
+    payload = base_payload(
+        "Presente",
+        relatorio_readia="Resumo da monitoria",
+        cursos_consumidos="Python I, JavaScript",
+    )
+
+    data = as_dict(build_form_data(payload))
+
+    assert data[FORM_FIELDS["cursos_consumidos"]["modulo_1"]] == ["Python I"]
+    assert data[FORM_FIELDS["cursos_consumidos"]["modulo_2"]] == ["JavaScript"]
 
 
 def test_status_invalido_levanta_value_error() -> None:

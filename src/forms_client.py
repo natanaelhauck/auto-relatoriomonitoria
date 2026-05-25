@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import requests
@@ -120,6 +121,14 @@ COURSE_FIELDS = {
     "Desafio Final": (FORM_FIELDS["cursos_consumidos"]["nao_consumiu"], "Desafio Final"),
 }
 
+PAGE_HISTORY_BY_STATUS = {
+    "Presente": "0,2,3",
+    "Falta": "0,1",
+}
+
+DEFAULT_RELATORIO_READIA = "Resumo não disponível"
+DEFAULT_CURSOS_CONSUMIDOS = ["Não consumiu"]
+
 
 def view_to_form_response(view_url: str) -> str:
     """Convert a Google Forms view URL to its formResponse endpoint."""
@@ -159,7 +168,7 @@ def build_form_data(payload: MonitoriaPayload) -> list[tuple[str, str]]:
         (FORM_FIELDS["agente"], validated_payload.agente.strip()),
         (FORM_FIELDS["status"], validated_payload.status.strip()),
         ("fvv", "1"),
-        ("pageHistory", "0"),
+        ("pageHistory", PAGE_HISTORY_BY_STATUS.get(validated_payload.status, "0")),
     ]
 
     form_data.extend(_date_fields(validated_payload.data))
@@ -208,12 +217,40 @@ def _validate_payload(payload: MonitoriaPayload) -> MonitoriaPayload:
             outro_motivo=payload.outro_motivo,
         )
 
+    if payload.status == "Presente":
+        return MonitoriaPayload(
+            nome=payload.nome,
+            matricula=payload.matricula,
+            data=payload.data,
+            agente=payload.agente,
+            status=payload.status,
+            relatorio_readia=_text_or_default(
+                payload.relatorio_readia,
+                DEFAULT_RELATORIO_READIA,
+            ),
+            link_readia=_clean_optional_text(payload.link_readia),
+            cursos_consumidos=_normalize_courses(payload.cursos_consumidos),
+            motivo_falta=payload.motivo_falta,
+            outro_motivo=payload.outro_motivo,
+        )
+
     return payload
 
 
 def _require_text(value: str | None, field_name: str) -> None:
     if value is None or not str(value).strip():
         raise ValueError(f"Campo obrigatório ausente: {field_name}")
+
+
+def _text_or_default(value: Any, default: str) -> str:
+    text = str(value or "").strip()
+    return text or default
+
+
+def _clean_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip()
 
 
 def _date_fields(value: str) -> list[tuple[str, str]]:
@@ -233,13 +270,33 @@ def _optional_field(entry_id: str, value: str | None) -> list[tuple[str, str]]:
     return [(entry_id, value)]
 
 
-def _course_fields(cursos_consumidos: Iterable[str]) -> list[tuple[str, str]]:
+def _course_fields(cursos_consumidos: Iterable[str] | str) -> list[tuple[str, str]]:
     fields: list[tuple[str, str]] = []
 
-    for course in cursos_consumidos:
+    for course in _normalize_courses(cursos_consumidos):
         course_field = COURSE_FIELDS.get(course)
         if course_field is None:
             raise ValueError(f"Curso sem entry ID configurado: {course}")
         fields.append(course_field)
 
     return fields
+
+
+def _normalize_courses(cursos_consumidos: Any) -> list[str]:
+    if cursos_consumidos is None:
+        return DEFAULT_CURSOS_CONSUMIDOS.copy()
+
+    if isinstance(cursos_consumidos, str):
+        courses = [
+            course.strip()
+            for course in cursos_consumidos.split(",")
+            if course.strip()
+        ]
+        return courses or DEFAULT_CURSOS_CONSUMIDOS.copy()
+
+    courses = [
+        str(course).strip()
+        for course in cursos_consumidos
+        if str(course).strip()
+    ]
+    return courses or DEFAULT_CURSOS_CONSUMIDOS.copy()

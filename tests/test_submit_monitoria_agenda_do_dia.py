@@ -89,6 +89,38 @@ def test_submit_agenda_filtros_presentes_only_e_only_matricula(capsys) -> None:
     assert "Aluno Dois" not in output
 
 
+def test_submit_agenda_presente_sem_summary_usa_resumo_indisponivel(capsys) -> None:
+    preview_dir = _make_dir("tests/_tmp_agenda_preview_no_summary")
+    log_dir = _make_dir("tests/_tmp_agenda_logs_no_summary")
+    try:
+        _write_preview(
+            preview_dir,
+            [
+                {
+                    "status": "Presente",
+                    "nome": "Aluno Sem Summary",
+                    "matricula": "PDITA004",
+                    "observacao": "match confirmado",
+                },
+            ],
+        )
+
+        exit_code = submit_agenda.submit_monitoria_agenda_do_dia(
+            dry_run=True,
+            report_date="2026-05-22",
+            preview_dir=preview_dir,
+            log_dir=log_dir,
+        )
+    finally:
+        shutil.rmtree(preview_dir, ignore_errors=True)
+        shutil.rmtree(log_dir, ignore_errors=True)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "'relatorio_readia': 'Resumo não disponível'" in output
+    assert "match confirmado" not in output
+
+
 def test_submit_agenda_aplica_duplicidade_diaria(capsys) -> None:
     preview_dir = _make_dir("tests/_tmp_agenda_preview_duplicate")
     log_dir = _make_dir("tests/_tmp_agenda_logs_duplicate")

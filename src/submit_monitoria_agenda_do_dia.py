@@ -24,6 +24,7 @@ STATUS_PRESENTE = "Presente"
 STATUS_FALTA = "Falta"
 MOTIVO_SEM_RESPOSTA = "Sem resposta"
 CURSO_NAO_CONSUMIU = "Não consumiu"
+RELATORIO_READIA_INDISPONIVEL = "Resumo não disponível"
 
 
 def submit_monitoria_agenda_do_dia(
@@ -188,7 +189,7 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
             {
                 "relatorio_readia": _readia_report(row),
                 "link_readia": row.get("readia_report_url", ""),
-                "cursos_consumidos": [CURSO_NAO_CONSUMIU],
+                "cursos_consumidos": _courses_consumidos(row.get("cursos_consumidos")),
             }
         )
     elif status == STATUS_FALTA:
@@ -197,11 +198,20 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
 
 
 def _readia_report(row: dict[str, str]) -> str:
-    for field_name in ("readia_summary", "summary", "observacao"):
+    for field_name in ("readia_summary", "summary"):
         value = str(row.get(field_name, "")).strip()
         if value:
             return value
-    return ""
+    return RELATORIO_READIA_INDISPONIVEL
+
+
+def _courses_consumidos(value: Any) -> str:
+    if isinstance(value, list):
+        courses = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(courses) if courses else CURSO_NAO_CONSUMIU
+
+    text = str(value or "").strip()
+    return text or CURSO_NAO_CONSUMIU
 
 
 def _form_status(value: Any) -> str:
