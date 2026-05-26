@@ -1,25 +1,10 @@
 # Automacao de Relatorios de Monitoria
 
-Projeto Python para enviar relatorios de monitoria ao Google Forms a partir de
-dados organizados em planilhas. A estrutura tambem reserva pontos de entrada
-para integracao com Read IA.
+Projeto Python para enviar relatorios de monitoria ao Google Forms usando dois
+fluxos principais:
 
-## Objetivo
-
-- Ler dados de planilhas de acompanhamento.
-- Normalizar registros por tipo de relatorio.
-- Enviar relatorios ao Google Forms.
-- Receber payloads do Read IA para preparar envios de presenca.
-
-## Estrutura
-
-- `src/sheets_client.py`: leitura de planilhas Google Sheets.
-- `src/forms_client.py`: validacao e envio HTTP ao Google Forms.
-- `src/submission_runner.py`: execucao em lote, confirmacao e logs CSV.
-- `src/inspect_form.py`: inspecao dos `entry.*` do formulario.
-- `src/submit_*.py`: fluxos de envio por tipo de relatorio.
-- `src/webhook_readia.py`: endpoint Flask para payloads do Read IA.
-- `data/submission_logs/`: logs CSV locais de execucoes reais.
+- Semanal: alunos nao agendados e alunos que finalizaram o curso.
+- Diario: Google Agenda do dia cruzado com payloads do Read IA.
 
 ## Preparacao
 
@@ -29,291 +14,184 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Copie `.env.example` para `.env` e preencha `GOOGLE_SPREADSHEET_ID`. Para a
-credencial da service account, use uma das opcoes:
-
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: conteudo completo do JSON da service account.
-- `GOOGLE_SERVICE_ACCOUNT_FILE`: caminho para o arquivo JSON local, por exemplo
-  `credentials/google-service-account.json`.
-
-Quando `GOOGLE_SERVICE_ACCOUNT_JSON` estiver preenchida, ela tem prioridade
-sobre `GOOGLE_SERVICE_ACCOUNT_FILE`.
-
-Exemplo de abas e agenda no `.env`:
+Copie `.env.example` para `.env` e configure as variaveis principais:
 
 ```env
+GOOGLE_SERVICE_ACCOUNT_JSON={...json completo da service account...}
+GOOGLE_SPREADSHEET_ID=...
 GOOGLE_CALENDAR_ID=primary
 GOOGLE_CALENDAR_TIMEZONE=America/Sao_Paulo
 SHEET_NAO_AGENDADOS=Em Análise
 SHEET_FINALIZADOS=Finalizaram
-SHEET_PRESENTES=Presentes
-SHEET_ATIVOS=Ativo
+SHEET_READIA_PAYLOADS=ReadIA Payloads
+DEFAULT_AGENTE=Natanael
 ```
 
-## Inspecionar o formulario
+Tambem e possivel usar `GOOGLE_SERVICE_ACCOUNT_FILE` apontando para um arquivo
+JSON local. Quando `GOOGLE_SERVICE_ACCOUNT_JSON` estiver preenchida, ela tem
+prioridade.
 
-Use o inspetor quando o Google Forms mudar e for necessario revisar os entry IDs:
+Compartilhe a planilha e a agenda com o e-mail da service account, e habilite
+as APIs Google Sheets e Google Calendar no projeto Google Cloud.
+
+## Fluxo Semanal
+
+Roda sexta-feira as 15:00.
+
+Origem:
+
+- Aba `Em Análise` (`SHEET_NAO_AGENDADOS`) => `Aluno não agendado(Fantasma)`.
+- Aba `Finalizaram` (`SHEET_FINALIZADOS`) => `Aluno finalizou o curso`.
+
+O envio aplica duplicidade semanal por matricula, status, ano ISO e semana ISO,
+usando os CSVs em `data/submission_logs/`.
+
+Comandos:
 
 ```bash
-python -m src.inspect_form
+python -m src.weekly_auto_submit --dry-run
+python -m src.weekly_auto_submit --date 2026-05-26 --dry-run
+python -m src.weekly_auto_submit
+python -m src.weekly_auto_submit --yes
 ```
+
+Sem `--yes`, o modo real pede confirmacao digitando exatamente `ENVIAR`.
+
+## Fluxo Diario
+
+Roda em dias uteis por volta de 15:05.
+
+Origem:
+
+- Google Agenda do dia => monitorias previstas.
+- Aba `ReadIA Payloads` => presencas confirmadas pelo Read IA.
+
+Regra:
+
+- Se houver match Read IA com score 50 ou maior: envia `Presente`.
+- Se nao houver match Read IA: envia `Falta` com motivo `Sem resposta`.
+- Matches fracos ficam como `Falta` e tambem usam motivo `Sem resposta`.
+- Eventos sem matricula reconhecivel no titulo ficam em `eventos_nao_parseados`
+  e nao sao enviados automaticamente.
+
+O envio aplica duplicidade diaria por matricula, status e data.
+
+Comandos:
+
+```bash
+python -m src.daily_auto_submit --dry-run
+python -m src.daily_auto_submit --date 2026-05-26 --dry-run
+python -m src.daily_auto_submit --date 2026-05-26
+python -m src.daily_auto_submit --yes
+```
+
+Filtros uteis:
+
+```bash
+python -m src.daily_auto_submit --presentes-only --dry-run
+python -m src.daily_auto_submit --faltas-only --dry-run
+python -m src.daily_auto_submit --limit 1 --dry-run
+```
+
+O comando diario gera o preview em
+`data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv` e em seguida usa esse
+arquivo para enviar o Forms.
+
+Para gerar apenas o preview:
+
+```bash
+python -m src.preview_monitoria_agenda_do_dia --date 2026-05-26
+```
+
+Categorias do preview diario:
+
+- `presentes_confirmados`
+- `matches_fracos`
+- `faltas_candidatas`
+- `eventos_nao_parseados`
+
+Se o Read IA nao enviar payload de uma monitoria, ela sera lancada como `Falta`
+e deve ser corrigida manualmente no Google Forms, se necessario. O fluxo padrao
+nao usa aba de correcoes manuais.
 
 ## Webhook Read IA
 
-O webhook Flask recebe payloads do Read IA, salva os arquivos em
-`data/read_payloads/` e tambem registra cada payload na aba configurada por
-`SHEET_READIA_PAYLOADS` no Google Sheets. Os JSONs recebidos ficam ignorados
-pelo Git; apenas o `.gitkeep` da pasta e versionado.
+O webhook recebe payloads do Read IA, salva uma copia local em
+`data/read_payloads/` e registra os dados na aba `ReadIA Payloads`.
 
-Para rodar localmente:
+Rodar localmente:
 
 ```bash
 python -m src.webhook_readia
 ```
 
-URLs locais:
+Endpoints:
 
 ```text
-http://localhost:5000/read-webhook
-http://localhost:5000/health
+GET  /health
+POST /read-webhook
 ```
 
-Para testar os payloads salvos:
+Blindagens mantidas:
+
+- Payload grande e truncado antes de ir para a celula do Google Sheets.
+- `payload_json_size` guarda o tamanho original.
+- Deduplicacao por `meeting_id` ou `report_url`.
+- Falha ao salvar na planilha retorna HTTP 500 com `status: "sheet_error"`.
+- A aba registra `sheet_status` e `sheet_error`.
+
+Inspecao:
 
 ```bash
 python -m src.inspect_readia_payloads
+python -m src.inspect_readia_sheet --date 2026-05-26
 ```
 
-Para conferir os ultimos payloads salvos no Google Sheets:
-
-```bash
-python -m src.inspect_readia_sheet
-```
-
-Para o Read IA enviar dados para sua maquina local, sera necessario expor essa
-porta com ngrok ou hospedar o webhook em um servidor acessivel pela internet.
-
-## Deploy Render
-
-Crie um Web Service no Render e conecte o repositorio do GitHub.
-
-Configure as variaveis de ambiente no Render. Para as credenciais do Google,
-use:
-
-```env
-GOOGLE_SERVICE_ACCOUNT_JSON={...conteudo completo do JSON da service account...}
-```
-
-O valor deve ser o JSON completo baixado da service account, incluindo chaves
-como `type`, `project_id`, `private_key`, `client_email` e `token_uri`. No
-Render nao e necessario criar o arquivo `credentials/google-service-account.json`
-quando `GOOGLE_SERVICE_ACCOUNT_JSON` estiver configurada.
-
-Build:
-
-```bash
-pip install -r requirements.txt
-```
-
-Start:
-
-```bash
-gunicorn wsgi:app
-```
-
-Depois de publicado, valide o healthcheck:
+Para receber webhooks fora da maquina local, hospede o app ou exponha a porta
+com ngrok e configure a URL publica no Read IA:
 
 ```text
-https://URL/health
+https://URL_PUBLICA/read-webhook
 ```
 
-## Teste do Read IA com ngrok
+## Agendador Windows
 
-Execute:
+Crie duas tarefas no Agendador de Tarefas do Windows.
+
+Semanal:
+
+- Frequencia: semanal
+- Dia: sexta-feira
+- Horario: 15:00
+- Programa: `scripts/run_weekly_auto_submit.bat`
+
+Diario:
+
+- Frequencia: dias uteis
+- Horario: 15:05
+- Programa: `scripts/run_daily_auto_submit.bat`
+
+Os scripts ativam `.venv`, quando existir, e rodam:
 
 ```bash
-scripts/start_readia_webhook.bat
-```
-
-Pegue a URL gerada pelo ngrok:
-
-```text
-https://xxxx.ngrok-free.app
-```
-
-Configure no Read IA:
-
-```text
-https://xxxx.ngrok-free.app/read-webhook
-```
-
-Depois verifique os payloads recebidos:
-
-```bash
-python -m src.inspect_readia_payloads
-```
-
-## Preview Diario Agenda + Read IA
-
-O fluxo diario de presenca/falta usa o Google Agenda como base do dia, nao a
-aba `Ativo`. Cada evento da agenda deve trazer nome e matricula no titulo, por
-exemplo:
-
-```text
-Octavio Augusto de Araujo Americo PDBD163 and Natanael Hauck
-```
-
-Gere um CSV de revisao cruzando os eventos da agenda com os payloads Read IA
-salvos na aba configurada por `SHEET_READIA_PAYLOADS`:
-
-```bash
-python -m src.preview_monitoria_agenda_do_dia --date 2026-05-21
-```
-
-O arquivo gerado fica em `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
-e classifica os eventos em:
-
-- `presentes_confirmados`: score 50 ou maior, marcado como `Presente`.
-- `matches_fracos`: score entre 1 e 49, marcado como `Falta` e separado para revisao.
-- `faltas_candidatas`: evento agendado sem match no Read IA do dia.
-- `eventos_nao_parseados`: evento sem matricula reconhecivel no titulo.
-
-O score soma 100 pontos para matricula encontrada, 50 para nome completo,
-30 para primeiro e segundo nome, e 15 para primeiro nome. A busca considera
-`title`, `summary`, `participants` e o `payload_json` completo salvo na aba de
-payloads.
-
-A aba `Ativo` pode ser usada como apoio para completar dados cadastrais, mas nao
-e a base principal para gerar faltas do dia.
-
-Se usar service account, compartilhe a agenda configurada em
-`GOOGLE_CALENDAR_ID` com o e-mail dessa service account e habilite a Google
-Calendar API no projeto.
-
-## Preview Diario Ativos + Read IA
-
-Este preview antigo cruza todos os alunos ativos com os payloads Read IA e serve
-apenas como apoio cadastral/revisao, nao como base principal de faltas.
-
-```bash
-python -m src.preview_monitoria_do_dia --date 2026-05-21
-```
-
-## Dry-run
-
-Antes de enviar dados reais, revise os payloads:
-
-```bash
-python -m src.submit_monitoria_agenda_do_dia --date 2026-05-21 --dry-run
-python -m src.submit_nao_agendados --dry-run
-python -m src.submit_finalizados --dry-run
-python -m src.submit_faltas_sem_resposta --dry-run
-```
-
-O envio diario por agenda le o CSV `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
-gerado pelo preview. No modo real, ele pede a confirmacao literal `ENVIAR` e
-aplica duplicidade diaria por matricula, status e data.
-
-## Faltas
-
-O fluxo principal de faltas usa o Google Agenda como fonte dos alunos
-agendados e os payloads salvos do Read IA como confirmacao de presenca. Quando
-um evento de monitoria do dia tem nome e matricula no titulo, mas nao tem match
-confirmado no Read IA do mesmo dia, o aluno entra como `Falta` com motivo
-`Sem resposta`.
-
-Nao use `SHEET_FALTAS`: nao e necessario ter aba manual de faltas na planilha.
-Eventos sem matricula reconhecivel no titulo nao sao enviados automaticamente;
-revise antes com o preview de agenda.
-
-Exemplos:
-
-```bash
-python -m src.submit_faltas_sem_resposta --dry-run
-python -m src.submit_faltas_sem_resposta --date 2026-05-05 --dry-run
-python -m src.submit_faltas_sem_resposta --limit 1 --dry-run
-python -m src.submit_faltas_sem_resposta --only-matricula PDITA355 --dry-run
-```
-
-O fluxo de faltas consulta os CSVs em `data/submission_logs/` e pula registros
-ja enviados com a mesma matricula, o mesmo status, a mesma semana ISO e o mesmo
-ano ISO.
-
-Envio da semana atual, usando a data de hoje em `America/Sao_Paulo`:
-
-```bash
-python -m src.submit_nao_agendados --dry-run
-python -m src.submit_finalizados --dry-run
-```
-
-Envio retroativo, informando a data que deve ir para o Forms:
-
-```bash
-python -m src.submit_nao_agendados --date 2026-05-05 --dry-run
-python -m src.submit_finalizados --date 2026-05-05 --dry-run
-```
-
-Teste seguro com apenas 1 aluno:
-
-```bash
-python -m src.submit_nao_agendados --date 2026-05-05 --limit 1 --dry-run
-python -m src.submit_finalizados --date 2026-05-05 --limit 1 --dry-run
-```
-
-Teste por matrícula:
-
-```bash
-python -m src.submit_nao_agendados --date 2026-05-05 --only-matricula PDITA355 --dry-run
-```
-
-## Envio real
-
-Execute sem `--dry-run` e confirme digitando exatamente `ENVIAR`:
-
-```bash
-python -m src.submit_nao_agendados
-python -m src.submit_finalizados
-python -m src.submit_faltas_sem_resposta
-```
-
-Os mesmos argumentos `--date`, `--limit` e `--only-matricula` podem ser usados no
-envio real; a confirmação `ENVIAR` continua obrigatória.
-
-Cada execucao real gera um CSV em `data/submission_logs/` com o resultado por
-aluno. Esses logs sao usados pelo envio semanal e pelo fluxo de faltas para
-evitar duplicidades por matricula, status e semana ISO.
-
-## Envio Semanal
-
-O envio semanal combina os alunos de `SHEET_NAO_AGENDADOS` e
-`SHEET_FINALIZADOS`, usa a data atual em `America/Sao_Paulo` e evita
-duplicidade automaticamente. Antes de enviar, ele consulta os CSVs em
-`data/submission_logs/` e pula registros que ja tenham envio com a mesma
-matricula, o mesmo status, a mesma semana ISO e o mesmo ano ISO.
-
-```bash
-python -m src.weekly_auto_submit --dry-run
-python -m src.weekly_auto_submit --limit 1 --dry-run
 python -m src.weekly_auto_submit --yes
+python -m src.daily_auto_submit --yes
 ```
 
-Para envio retroativo semanal:
+O computador precisa estar ligado, conectado a internet e com acesso ao `.env`
+e as credenciais configuradas.
+
+## Inspecionar o Google Forms
+
+Use quando o formulario mudar e for necessario revisar os `entry.*`:
 
 ```bash
-python -m src.weekly_auto_submit --date 2026-05-05 --dry-run
+python -m src.inspect_form
 ```
 
-## Agendador do Windows
+## Testes
 
-Para rodar automaticamente toda sexta-feira as 15:00:
-
-1. Abra o Agendador de Tarefas do Windows.
-2. Selecione `Criar Tarefa Basica`.
-3. Escolha frequencia semanal.
-4. Marque sexta-feira.
-5. Defina o horario `15:00`.
-6. Em acao, escolha `Iniciar um programa`.
-7. Em programa, selecione o arquivo `scripts/run_weekly_auto_submit.bat`.
-
-O computador precisa estar ligado, conectado a internet e com acesso as
-credenciais configuradas no `.env`.
+```bash
+python -m compileall src
+python -m pytest
+```

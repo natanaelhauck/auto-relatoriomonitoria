@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from src.course_detection import (
-    CURSO_NAO_CONSUMIU,
     describe_consumed_courses_from_text,
     detect_consumed_courses_from_text,
 )
@@ -27,7 +26,6 @@ from src.submission_runner import (
 
 STATUS_PRESENTE = "Presente"
 STATUS_FALTA = "Falta"
-CATEGORY_AGUARDANDO_READIA = "aguardando_readia"
 MOTIVO_SEM_RESPOSTA = "Sem resposta"
 RELATORIO_READIA_INDISPONIVEL = "Resumo não disponível"
 
@@ -40,6 +38,7 @@ def submit_monitoria_agenda_do_dia(
     only_matricula: str | None = None,
     presentes_only: bool = False,
     faltas_only: bool = False,
+    assume_yes: bool = False,
     preview_dir: Path = PREVIEW_DIR,
     log_dir: Path = SUBMISSION_LOG_DIR,
     submitter: Callable[[MonitoriaPayload], Any] | None = None,
@@ -72,6 +71,7 @@ def submit_monitoria_agenda_do_dia(
         ignored_rows=ignored_rows,
         limit=limit,
         only_matricula=only_matricula,
+        assume_yes=assume_yes,
         skip_existing=True,
         duplicate_scope="daily",
         log_dir=log_dir,
@@ -104,8 +104,6 @@ def select_preview_rows(
     wanted_matricula = only_matricula.strip().casefold() if only_matricula else ""
 
     for row in rows:
-        if str(row.get("categoria", "")).strip() == CATEGORY_AGUARDANDO_READIA:
-            continue
         status = _form_status(row.get("status"))
         if status not in {STATUS_PRESENTE, STATUS_FALTA}:
             continue
@@ -184,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Processa apenas linhas Falta.",
     )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirma automaticamente o envio real. Use apenas em agendamentos.",
+    )
     return parser
 
 
@@ -203,7 +206,7 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
             }
         )
     elif status == STATUS_FALTA:
-        base_row["motivo_falta"] = row.get("motivo_falta", "") or MOTIVO_SEM_RESPOSTA
+        base_row["motivo_falta"] = MOTIVO_SEM_RESPOSTA
     return base_row
 
 
@@ -272,6 +275,7 @@ def main() -> None:
             only_matricula=args.only_matricula,
             presentes_only=args.presentes_only,
             faltas_only=args.faltas_only,
+            assume_yes=args.yes,
         )
     except RuntimeError as exc:
         print(f"ERRO - {exc}")

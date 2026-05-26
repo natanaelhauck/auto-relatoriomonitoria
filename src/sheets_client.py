@@ -27,18 +27,6 @@ READIA_PAYLOAD_COLUMNS = (
     "sheet_status",
     "sheet_error",
 )
-MONITORIA_CORRECTIONS_COLUMNS = (
-    "data",
-    "matricula",
-    "nome",
-    "status",
-    "relatorio_readia",
-    "link_readia",
-    "cursos_consumidos",
-    "motivo_falta",
-    "observacao",
-)
-
 HEADER_ALIASES = {
     "data": "data",
     "nome": "nome",
@@ -84,7 +72,6 @@ class SheetsSettings:
     sheet_ativos: str
     default_agente: str
     sheet_readia_payloads: str = "ReadIA Payloads"
-    sheet_monitoria_corrections: str = "Correções Monitoria"
     service_account_json: str | None = None
 
 
@@ -203,31 +190,6 @@ def read_readia_payload_rows(limit: int | None = None) -> list[dict[str, Any]]:
     return rows
 
 
-def read_monitoria_correction_rows() -> list[dict[str, Any]]:
-    """Read manual monitoring corrections from the optional sheet tab."""
-    settings = load_sheets_settings()
-    service = _build_sheets_service(settings)
-    sheet_name = settings.sheet_monitoria_corrections
-
-    _ensure_monitoria_corrections_sheet(service, settings.spreadsheet_id, sheet_name)
-    values = _get_sheet_values(service, settings.spreadsheet_id, sheet_name)
-    if not values:
-        return []
-
-    headers = [_normalize_header(header) for header in values[0]]
-    rows: list[dict[str, Any]] = []
-
-    for raw_row in values[1:]:
-        if _is_empty_row(raw_row):
-            continue
-
-        row = _normalize_row(headers, raw_row, settings.default_agente)
-        if row.get("data") and row.get("matricula"):
-            rows.append(row)
-
-    return rows
-
-
 def load_sheets_settings() -> SheetsSettings:
     """Load Google Sheets settings from `.env`."""
     load_dotenv()
@@ -251,10 +213,6 @@ def load_sheets_settings() -> SheetsSettings:
         sheet_readia_payloads=(
             os.getenv("SHEET_READIA_PAYLOADS", "ReadIA Payloads").strip()
             or "ReadIA Payloads"
-        ),
-        sheet_monitoria_corrections=(
-            os.getenv("SHEET_MONITORIA_CORRECTIONS", "Correções Monitoria").strip()
-            or "Correções Monitoria"
         ),
         service_account_json=service_account_json or None,
     )
@@ -341,27 +299,6 @@ def _ensure_readia_payload_sheet(
         sheet_name,
         list(READIA_PAYLOAD_COLUMNS),
         warning_context="aba de payloads Read IA",
-    )
-
-
-def _ensure_monitoria_corrections_sheet(
-    service: Any,
-    spreadsheet_id: str,
-    sheet_name: str,
-) -> None:
-    created = _ensure_sheet_exists(service, spreadsheet_id, sheet_name)
-    if created:
-        print(
-            "AVISO - aba de correcoes de monitoria nao existia no Google Sheets; "
-            f"criada: {sheet_name}"
-        )
-
-    _ensure_sheet_header(
-        service,
-        spreadsheet_id,
-        sheet_name,
-        list(MONITORIA_CORRECTIONS_COLUMNS),
-        warning_context="aba de correcoes de monitoria",
     )
 
 
