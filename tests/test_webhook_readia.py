@@ -16,7 +16,33 @@ def test_health_retorna_ok() -> None:
     assert response.get_json() == {"status": "ok"}
 
 
-def test_read_webhook_salva_arquivo_json(monkeypatch) -> None:
+def test_webhook_status_retorna_total_de_payloads_de_hoje(monkeypatch) -> None:
+    monkeypatch.setattr(
+        webhook_readia,
+        "_now_sao_paulo",
+        lambda: webhook_readia.datetime.fromisoformat("2026-05-22T15:00:00-03:00"),
+    )
+    monkeypatch.setattr(
+        webhook_readia,
+        "read_readia_payload_rows",
+        lambda: [
+            {"received_at": "2026-05-22T10:00:00-03:00"},
+            {"received_at": "2026-05-22T11:00:00-03:00"},
+            {"received_at": "2026-05-21T11:00:00-03:00"},
+        ],
+    )
+    client = webhook_readia.app.test_client()
+
+    response = client.get("/webhook-status")
+
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["status"] == "ok"
+    assert body["timestamp"] == "2026-05-22T15:00:00-03:00"
+    assert body["total_payloads_today"] == 2
+
+
+def test_read_webhook_salva_arquivo_json(monkeypatch, capsys) -> None:
     payload_dir = Path("tests/_tmp_read_payloads")
     shutil.rmtree(payload_dir, ignore_errors=True)
     payload_dir.mkdir(parents=True)
@@ -55,6 +81,12 @@ def test_read_webhook_salva_arquivo_json(monkeypatch) -> None:
         assert appended_rows[0]["payload_json_size"]
         assert appended_rows[0]["sheet_status"] == "saved"
         assert appended_rows[0]["sheet_error"] == ""
+
+        output = capsys.readouterr().out
+        assert '"event": "readia_webhook"' in output
+        assert '"meeting_id": "abc123"' in output
+        assert '"title": "Monitoria"' in output
+        assert '"sheet_status": "saved"' in output
     finally:
         shutil.rmtree(payload_dir, ignore_errors=True)
 

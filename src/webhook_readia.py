@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, request
 
-from src.sheets_client import append_readia_payload
+from src.sheets_client import append_readia_payload, read_readia_payload_rows
 
 PAYLOAD_DIR = Path("data/read_payloads")
 SAO_PAULO_TZ = ZoneInfo("America/Sao_Paulo")
@@ -48,6 +48,40 @@ def health() -> tuple[Any, int]:
     return jsonify({"status": "ok"}), 200
 
 
+@app.get("/webhook-status")
+def webhook_status() -> tuple[Any, int]:
+    """Return a webhook status summary backed by the Read IA payload sheet."""
+    timestamp = _now_sao_paulo().isoformat()
+    target_date = timestamp[:10]
+    try:
+        payload_rows = read_readia_payload_rows()
+    except Exception as exc:
+        return (
+            jsonify(
+                {
+                    "status": "sheet_error",
+                    "timestamp": timestamp,
+                    "error": str(exc),
+                }
+            ),
+            500,
+        )
+
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "timestamp": timestamp,
+                "total_payloads_today": count_payloads_received_on_date(
+                    payload_rows,
+                    target_date,
+                ),
+            }
+        ),
+        200,
+    )
+
+
 @app.post("/read-webhook")
 def read_webhook() -> tuple[Any, int]:
     """Receive a Read IA webhook payload and persist a sanitized copy."""
@@ -70,7 +104,7 @@ def handle_readia_webhook(
     """Save a sanitized Read IA webhook payload with request metadata."""
     PAYLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    received_at = datetime.now(SAO_PAULO_TZ).isoformat()
+    received_at = _now_sao_paulo().isoformat()
     sanitized_payload = _remove_secrets(payload)
     sanitized_headers = _remove_secrets(headers or {})
     session_id = _extract_session_id(sanitized_payload)
@@ -88,6 +122,7 @@ def handle_readia_webhook(
 
     sheet_row = build_readia_payload_row(sanitized_payload, received_at=received_at)
     sheet_status, sheet_error = _append_payload_to_sheet(sheet_row)
+    _log_readia_webhook_result(sheet_row, sheet_status, sheet_error)
     if sheet_error:
         return {
             "status": "sheet_error",
@@ -100,6 +135,18 @@ def handle_readia_webhook(
     if sheet_error:
         result["sheet_error"] = sheet_error
     return result
+
+
+def count_payloads_received_on_date(
+    rows: list[Mapping[str, Any]],
+    target_date: str,
+) -> int:
+    """Count Read IA payload sheet rows received on a given YYYY-MM-DD date."""
+    return sum(
+        1
+        for row in rows
+        if _date_from_value(row.get("received_at", "")) == target_date
+    )
 
 
 def build_readia_payload_row(
@@ -134,6 +181,24 @@ def _append_payload_to_sheet(row: Mapping[str, Any]) -> tuple[str, str | None]:
         return "error", str(exc)
 
     return sheet_status, None
+
+
+def _log_readia_webhook_result(
+    row: Mapping[str, Any],
+    sheet_status: str,
+    sheet_error: str | None,
+) -> None:
+    log_data = {
+        "event": "readia_webhook",
+        "received_at": _clean_sheet_value(row.get("received_at")),
+        "meeting_id": _clean_sheet_value(row.get("meeting_id")),
+        "title": _clean_sheet_value(row.get("title")),
+        "report_url": _clean_sheet_value(row.get("report_url")),
+        "sheet_status": sheet_status,
+    }
+    if sheet_error:
+        log_data["sheet_error"] = sheet_error
+    print(json.dumps(log_data, ensure_ascii=False), flush=True)
 
 
 def _sheet_payload_json(payload_json: str) -> str:
@@ -198,7 +263,7 @@ def _find_first_value(value: Any, target_keys: tuple[str, ...]) -> Any:
 
 
 def _build_payload_filename(session_id: str | None) -> str:
-    timestamp = datetime.now(SAO_PAULO_TZ).strftime("%Y%m%dT%H%M%S")
+    timestamp = _now_sao_paulo().strftime("%Y%m%dT%H%M%S")
     if session_id:
         return f"{timestamp}_readia_{session_id}.json"
     return f"{timestamp}_readia.json"
@@ -226,6 +291,25 @@ def _clean_sheet_value(value: Any) -> str:
     if isinstance(value, (Mapping, list)):
         return json.dumps(value, ensure_ascii=False)
     return str(value).strip()
+
+
+def _now_sao_paulo() -> datetime:
+    return datetime.now(SAO_PAULO_TZ)
+
+
+def _date_from_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    match = re.search(r"\d{4}-\d{2}-\d{2}", text)
+    if match:
+        return match.group(0)
+
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return ""
 
 
 if __name__ == "__main__":
