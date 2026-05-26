@@ -62,7 +62,7 @@ def test_read_webhook_salva_arquivo_json(monkeypatch, capsys) -> None:
             },
         )
 
-        assert response.status_code == 202
+        assert response.status_code == 200
         assert response.get_json()["sheet_status"] == "saved"
         saved_files = list(payload_dir.glob("*.json"))
         assert len(saved_files) == 1
@@ -84,8 +84,12 @@ def test_read_webhook_salva_arquivo_json(monkeypatch, capsys) -> None:
 
         output = capsys.readouterr().out
         assert '"event": "readia_webhook"' in output
+        assert '"method": "POST"' in output
+        assert '"path": "/read-webhook"' in output
         assert '"meeting_id": "abc123"' in output
         assert '"title": "Monitoria"' in output
+        assert '"payload_json_size":' in output
+        assert '"total_ms":' in output
         assert '"sheet_status": "saved"' in output
     finally:
         shutil.rmtree(payload_dir, ignore_errors=True)
@@ -127,7 +131,7 @@ def test_build_readia_payload_row_trunca_payload_grande() -> None:
     assert row["summary"] == "x" * 50000
 
 
-def test_read_webhook_retorna_500_quando_sheets_falha(monkeypatch) -> None:
+def test_read_webhook_retorna_500_quando_sheets_falha(monkeypatch, capsys) -> None:
     payload_dir = Path("tests/_tmp_read_payloads_sheet_error")
     shutil.rmtree(payload_dir, ignore_errors=True)
     payload_dir.mkdir(parents=True)
@@ -148,6 +152,10 @@ def test_read_webhook_retorna_500_quando_sheets_falha(monkeypatch) -> None:
         assert body["sheet_status"] == "error"
         assert body["error"] == "Sheets indisponivel"
         assert len(list(payload_dir.glob("*.json"))) == 1
+
+        output = capsys.readouterr().out
+        assert '"sheet_status": "error"' in output
+        assert '"sheet_error": "Sheets indisponivel"' in output
     finally:
         shutil.rmtree(payload_dir, ignore_errors=True)
 
@@ -168,7 +176,7 @@ def test_read_webhook_retorna_duplicate_skipped(monkeypatch) -> None:
 
         response = client.post("/read-webhook", json={"meeting_id": "meet-dup"})
 
-        assert response.status_code == 202
+        assert response.status_code == 200
         assert response.get_json()["sheet_status"] == "duplicate_skipped"
     finally:
         shutil.rmtree(payload_dir, ignore_errors=True)

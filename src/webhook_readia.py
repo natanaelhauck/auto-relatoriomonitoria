@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
@@ -85,14 +86,21 @@ def webhook_status() -> tuple[Any, int]:
 @app.post("/read-webhook")
 def read_webhook() -> tuple[Any, int]:
     """Receive a Read IA webhook payload and persist a sanitized copy."""
+    started_at = time.perf_counter()
     parsed_payload = request.get_json(silent=True)
     if isinstance(parsed_payload, Mapping):
         payload = parsed_payload
     else:
         payload = {"raw_text": request.get_data(as_text=True)}
 
-    result = handle_readia_webhook(payload, headers=dict(request.headers))
-    status_code = 500 if result.get("status") == "sheet_error" else 202
+    result = handle_readia_webhook(
+        payload,
+        headers=dict(request.headers),
+        request_method=request.method,
+        request_path=request.path,
+        started_at=started_at,
+    )
+    status_code = 500 if result.get("status") == "sheet_error" else 200
     return jsonify(result), status_code
 
 
@@ -100,8 +108,12 @@ def handle_readia_webhook(
     payload: Mapping[str, Any],
     *,
     headers: Mapping[str, Any] | None = None,
+    request_method: str = "",
+    request_path: str = "",
+    started_at: float | None = None,
 ) -> dict[str, Any]:
     """Save a sanitized Read IA webhook payload with request metadata."""
+    started_at = started_at if started_at is not None else time.perf_counter()
     PAYLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     received_at = _now_sao_paulo().isoformat()
@@ -122,7 +134,15 @@ def handle_readia_webhook(
 
     sheet_row = build_readia_payload_row(sanitized_payload, received_at=received_at)
     sheet_status, sheet_error = _append_payload_to_sheet(sheet_row)
-    _log_readia_webhook_result(sheet_row, sheet_status, sheet_error)
+    total_ms = int(round((time.perf_counter() - started_at) * 1000))
+    _log_readia_webhook_result(
+        sheet_row,
+        sheet_status,
+        sheet_error,
+        request_method=request_method,
+        request_path=request_path,
+        total_ms=total_ms,
+    )
     if sheet_error:
         return {
             "status": "sheet_error",
@@ -187,13 +207,21 @@ def _log_readia_webhook_result(
     row: Mapping[str, Any],
     sheet_status: str,
     sheet_error: str | None,
+    *,
+    request_method: str,
+    request_path: str,
+    total_ms: int,
 ) -> None:
     log_data = {
         "event": "readia_webhook",
         "received_at": _clean_sheet_value(row.get("received_at")),
+        "method": request_method,
+        "path": request_path,
         "meeting_id": _clean_sheet_value(row.get("meeting_id")),
         "title": _clean_sheet_value(row.get("title")),
         "report_url": _clean_sheet_value(row.get("report_url")),
+        "payload_json_size": _clean_sheet_value(row.get("payload_json_size")),
+        "total_ms": total_ms,
         "sheet_status": sheet_status,
     }
     if sheet_error:

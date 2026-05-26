@@ -110,9 +110,9 @@ Categorias do preview diario:
 - `faltas_candidatas`
 - `eventos_nao_parseados`
 
-Se o Read IA nao enviar payload de uma monitoria, ela sera lancada como `Falta`
-e deve ser corrigida manualmente no Google Forms, se necessario. O fluxo padrao
-nao usa aba de correcoes manuais.
+Se o webhook do Read IA falhar ou o Read IA nao enviar payload de uma monitoria,
+ela sera lancada como `Falta` e pode ser corrigida manualmente no Google Forms.
+O fluxo padrao nao usa aba de correcoes manuais.
 
 ## Webhook Read IA
 
@@ -129,6 +129,7 @@ Endpoints:
 
 ```text
 GET  /health
+GET  /webhook-status
 POST /read-webhook
 ```
 
@@ -137,6 +138,7 @@ Blindagens mantidas:
 - Payload grande e truncado antes de ir para a celula do Google Sheets.
 - `payload_json_size` guarda o tamanho original.
 - Deduplicacao por `meeting_id` ou `report_url`.
+- Sucesso ao salvar na planilha retorna HTTP 200.
 - Falha ao salvar na planilha retorna HTTP 500 com `status: "sheet_error"`.
 - A aba registra `sheet_status` e `sheet_error`.
 
