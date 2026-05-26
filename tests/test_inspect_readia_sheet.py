@@ -43,3 +43,44 @@ def test_inspect_readia_sheet_mostra_totais_datas_e_hits(monkeypatch, capsys) ->
     assert "meeting_id: meet-123" in output
     assert "meeting_id: meet-antigo" not in output
     assert "payload_json contem aluno conhecido: sim - Maria Silva PDITA123" in output
+
+
+def test_inspect_readia_sheet_mostra_erros_truncados_e_duplicados(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        inspect_readia_sheet,
+        "read_readia_payload_rows",
+        lambda: [
+            {
+                "received_at": "2026-05-22T14:30:00-03:00",
+                "meeting_id": "meet-123",
+                "title": "Monitoria",
+                "report_url": "https://read.ai/report/123",
+                "payload_json": "[TRUNCADO - payload grande demais]\n{}",
+                "sheet_status": "saved",
+                "sheet_error": "",
+            },
+            {
+                "received_at": "2026-05-22T14:40:00-03:00",
+                "meeting_id": "meet-123",
+                "title": "Monitoria duplicada",
+                "report_url": "https://read.ai/report/456",
+                "payload_json": "{}",
+                "sheet_status": "error",
+                "sheet_error": "falha de teste",
+            },
+        ],
+    )
+    monkeypatch.setattr(inspect_readia_sheet, "_load_known_students", lambda: [])
+
+    exit_code = inspect_readia_sheet.inspect_readia_sheet(report_date="2026-05-22")
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Payloads com sheet_error: 1" in output
+    assert "Payloads truncados: 1" in output
+    assert "Possiveis duplicados: 2" in output
+    assert "meeting_id=meet-123: 2 linhas" in output
+    assert "erro=falha de teste" in output

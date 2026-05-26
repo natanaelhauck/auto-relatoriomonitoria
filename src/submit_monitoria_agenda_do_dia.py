@@ -27,6 +27,7 @@ from src.submission_runner import (
 
 STATUS_PRESENTE = "Presente"
 STATUS_FALTA = "Falta"
+CATEGORY_AGUARDANDO_READIA = "aguardando_readia"
 MOTIVO_SEM_RESPOSTA = "Sem resposta"
 RELATORIO_READIA_INDISPONIVEL = "Resumo não disponível"
 
@@ -103,6 +104,8 @@ def select_preview_rows(
     wanted_matricula = only_matricula.strip().casefold() if only_matricula else ""
 
     for row in rows:
+        if str(row.get("categoria", "")).strip() == CATEGORY_AGUARDANDO_READIA:
+            continue
         status = _form_status(row.get("status"))
         if status not in {STATUS_PRESENTE, STATUS_FALTA}:
             continue
@@ -200,7 +203,7 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
             }
         )
     elif status == STATUS_FALTA:
-        base_row["motivo_falta"] = MOTIVO_SEM_RESPOSTA
+        base_row["motivo_falta"] = row.get("motivo_falta", "") or MOTIVO_SEM_RESPOSTA
     return base_row
 
 

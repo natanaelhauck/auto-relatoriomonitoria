@@ -62,6 +62,77 @@ def test_submit_agenda_dry_run_envia_presentes_e_faltas(capsys) -> None:
     assert "Aluno Revisar" not in output
 
 
+def test_submit_agenda_nao_envia_aguardando_readia(capsys) -> None:
+    preview_dir = _make_dir("tests/_tmp_agenda_preview_waiting")
+    log_dir = _make_dir("tests/_tmp_agenda_logs_waiting")
+    try:
+        _write_preview(
+            preview_dir,
+            [
+                {
+                    "categoria": "aguardando_readia",
+                    "status": "",
+                    "nome": "Aluno Aguardando",
+                    "matricula": "PDITA999",
+                },
+                {
+                    "categoria": "faltas_candidatas",
+                    "status": "Falta",
+                    "nome": "Aluno Falta",
+                    "matricula": "PDITA002",
+                },
+            ],
+        )
+
+        exit_code = submit_agenda.submit_monitoria_agenda_do_dia(
+            dry_run=True,
+            report_date="2026-05-22",
+            preview_dir=preview_dir,
+            log_dir=log_dir,
+        )
+    finally:
+        shutil.rmtree(preview_dir, ignore_errors=True)
+        shutil.rmtree(log_dir, ignore_errors=True)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert output.count("[DRY-RUN]") == 1
+    assert "Aluno Falta" in output
+    assert "Aluno Aguardando" not in output
+
+
+def test_submit_agenda_usa_motivo_falta_da_correcao(capsys) -> None:
+    preview_dir = _make_dir("tests/_tmp_agenda_preview_reason")
+    log_dir = _make_dir("tests/_tmp_agenda_logs_reason")
+    try:
+        _write_preview(
+            preview_dir,
+            [
+                {
+                    "categoria": "correcao_manual",
+                    "status": "Falta",
+                    "nome": "Aluno Corrigido",
+                    "matricula": "PDITA998",
+                    "motivo_falta": "Atestado informado manualmente",
+                },
+            ],
+        )
+
+        exit_code = submit_agenda.submit_monitoria_agenda_do_dia(
+            dry_run=True,
+            report_date="2026-05-22",
+            preview_dir=preview_dir,
+            log_dir=log_dir,
+        )
+    finally:
+        shutil.rmtree(preview_dir, ignore_errors=True)
+        shutil.rmtree(log_dir, ignore_errors=True)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "'motivo_falta': 'Atestado informado manualmente'" in output
+
+
 def test_submit_agenda_detecta_cursos_pelo_resumo_readia(capsys) -> None:
     preview_dir = _make_dir("tests/_tmp_agenda_preview_courses")
     log_dir = _make_dir("tests/_tmp_agenda_logs_courses")
@@ -228,11 +299,13 @@ def _make_dir(path: str) -> Path:
 
 def _write_preview(preview_dir: Path, rows: list[dict[str, str]]) -> None:
     fieldnames = [
+        "categoria",
         "status",
         "nome",
         "matricula",
         "readia_summary",
         "readia_report_url",
+        "motivo_falta",
         "observacao",
     ]
     with (preview_dir / "preview_agenda_monitoria_2026-05-22.csv").open(

@@ -23,9 +23,24 @@ READIA_PAYLOAD_COLUMNS = (
     "summary",
     "report_url",
     "payload_json",
+    "payload_json_size",
+    "sheet_status",
+    "sheet_error",
+)
+MONITORIA_CORRECTIONS_COLUMNS = (
+    "data",
+    "matricula",
+    "nome",
+    "status",
+    "relatorio_readia",
+    "link_readia",
+    "cursos_consumidos",
+    "motivo_falta",
+    "observacao",
 )
 
 HEADER_ALIASES = {
+    "data": "data",
     "nome": "nome",
     "nome do aluno": "nome",
     "aluno": "nome",
@@ -43,10 +58,17 @@ HEADER_ALIASES = {
     "motivo da falta": "motivo_falta",
     "motivo_falta": "motivo_falta",
     "relatorio do read ia": "relatorio_readia",
+    "relatorio_readia": "relatorio_readia",
     "link do read ia": "link_readia",
+    "link_readia": "link_readia",
     "curso": "cursos_consumidos",
     "cursos": "cursos_consumidos",
     "curso ou cursos": "cursos_consumidos",
+    "cursos_consumidos": "cursos_consumidos",
+    "status": "status",
+    "observacao": "observacao",
+    "observacao/observacoes": "observacao",
+    "observacoes": "observacao",
 }
 
 
@@ -62,6 +84,7 @@ class SheetsSettings:
     sheet_ativos: str
     default_agente: str
     sheet_readia_payloads: str = "ReadIA Payloads"
+    sheet_monitoria_corrections: str = "Correções Monitoria"
     service_account_json: str | None = None
 
 
@@ -110,19 +133,28 @@ def read_sheet_rows(sheet_name: str, *, allow_missing_sheet: bool = False) -> li
     return rows
 
 
-def append_readia_payload(row: Mapping[str, Any]) -> None:
+def append_readia_payload(row: Mapping[str, Any]) -> str:
     """Append one sanitized Read IA webhook payload to Google Sheets."""
     settings = load_sheets_settings()
     service = _build_sheets_service(settings)
     sheet_name = settings.sheet_readia_payloads
 
     _ensure_readia_payload_sheet(service, settings.spreadsheet_id, sheet_name)
+    existing_rows = _read_table_rows(service, settings.spreadsheet_id, sheet_name)
+    if _has_duplicate_readia_payload(row, existing_rows):
+        return "duplicate_skipped"
+
+    row_to_append = dict(row)
+    row_to_append.setdefault("sheet_status", "saved")
+    row_to_append.setdefault("sheet_error", "")
     _append_sheet_values(
         service,
         settings.spreadsheet_id,
         sheet_name,
-        [[_clean_cell(row.get(column, "")) for column in READIA_PAYLOAD_COLUMNS]],
+        [[_clean_cell(row_to_append.get(column, "")) for column in READIA_PAYLOAD_COLUMNS]],
+        columns_count=len(READIA_PAYLOAD_COLUMNS),
     )
+    return "saved"
 
 
 def read_readia_payload_rows(limit: int | None = None) -> list[dict[str, Any]]:
@@ -171,6 +203,31 @@ def read_readia_payload_rows(limit: int | None = None) -> list[dict[str, Any]]:
     return rows
 
 
+def read_monitoria_correction_rows() -> list[dict[str, Any]]:
+    """Read manual monitoring corrections from the optional sheet tab."""
+    settings = load_sheets_settings()
+    service = _build_sheets_service(settings)
+    sheet_name = settings.sheet_monitoria_corrections
+
+    _ensure_monitoria_corrections_sheet(service, settings.spreadsheet_id, sheet_name)
+    values = _get_sheet_values(service, settings.spreadsheet_id, sheet_name)
+    if not values:
+        return []
+
+    headers = [_normalize_header(header) for header in values[0]]
+    rows: list[dict[str, Any]] = []
+
+    for raw_row in values[1:]:
+        if _is_empty_row(raw_row):
+            continue
+
+        row = _normalize_row(headers, raw_row, settings.default_agente)
+        if row.get("data") and row.get("matricula"):
+            rows.append(row)
+
+    return rows
+
+
 def load_sheets_settings() -> SheetsSettings:
     """Load Google Sheets settings from `.env`."""
     load_dotenv()
@@ -194,6 +251,10 @@ def load_sheets_settings() -> SheetsSettings:
         sheet_readia_payloads=(
             os.getenv("SHEET_READIA_PAYLOADS", "ReadIA Payloads").strip()
             or "ReadIA Payloads"
+        ),
+        sheet_monitoria_corrections=(
+            os.getenv("SHEET_MONITORIA_CORRECTIONS", "Correções Monitoria").strip()
+            or "Correções Monitoria"
         ),
         service_account_json=service_account_json or None,
     )
@@ -274,18 +335,34 @@ def _ensure_readia_payload_sheet(
             f"criada: {sheet_name}"
         )
 
-    header = _get_sheet_header(service, spreadsheet_id, sheet_name)
-    if not header:
-        _set_sheet_header(service, spreadsheet_id, sheet_name)
-        return
+    _ensure_sheet_header(
+        service,
+        spreadsheet_id,
+        sheet_name,
+        list(READIA_PAYLOAD_COLUMNS),
+        warning_context="aba de payloads Read IA",
+    )
 
-    expected_header = list(READIA_PAYLOAD_COLUMNS)
-    current_header = [_clean_cell(cell) for cell in header[: len(expected_header)]]
-    if current_header != expected_header:
+
+def _ensure_monitoria_corrections_sheet(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+) -> None:
+    created = _ensure_sheet_exists(service, spreadsheet_id, sheet_name)
+    if created:
         print(
-            "AVISO - cabecalho da aba de payloads Read IA difere do esperado. "
-            f"Esperado: {', '.join(expected_header)}"
+            "AVISO - aba de correcoes de monitoria nao existia no Google Sheets; "
+            f"criada: {sheet_name}"
         )
+
+    _ensure_sheet_header(
+        service,
+        spreadsheet_id,
+        sheet_name,
+        list(MONITORIA_CORRECTIONS_COLUMNS),
+        warning_context="aba de correcoes de monitoria",
+    )
 
 
 def _ensure_sheet_exists(service: Any, spreadsheet_id: str, sheet_name: str) -> bool:
@@ -316,19 +393,51 @@ def _get_sheet_header(
     result = (
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=spreadsheet_id, range=_sheet_range(sheet_name, "A1:F1"))
+        .get(spreadsheetId=spreadsheet_id, range=_sheet_range(sheet_name, "A1:ZZ1"))
         .execute()
     )
     values = result.get("values", [])
     return values[0] if values else []
 
 
-def _set_sheet_header(service: Any, spreadsheet_id: str, sheet_name: str) -> None:
+def _ensure_sheet_header(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+    expected_header: list[str],
+    *,
+    warning_context: str,
+) -> None:
+    header = _get_sheet_header(service, spreadsheet_id, sheet_name)
+    if not header:
+        _set_sheet_header(service, spreadsheet_id, sheet_name, expected_header)
+        return
+
+    current_header = [_clean_cell(cell) for cell in header[: len(expected_header)]]
+    expected_prefix = expected_header[: len(current_header)]
+    if current_header == expected_prefix and current_header != expected_header:
+        _set_sheet_header(service, spreadsheet_id, sheet_name, expected_header)
+        return
+
+    if current_header != expected_header:
+        print(
+            f"AVISO - cabecalho da {warning_context} difere do esperado. "
+            f"Esperado: {', '.join(expected_header)}"
+        )
+
+
+def _set_sheet_header(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+    columns: list[str],
+) -> None:
+    columns_count = len(columns)
     service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
-        range=_sheet_range(sheet_name, "A1:F1"),
+        range=_sheet_range(sheet_name, f"A1:{_column_name(columns_count)}1"),
         valueInputOption="RAW",
-        body={"values": [list(READIA_PAYLOAD_COLUMNS)]},
+        body={"values": [columns]},
     ).execute()
 
 
@@ -337,14 +446,63 @@ def _append_sheet_values(
     spreadsheet_id: str,
     sheet_name: str,
     values: list[list[Any]],
+    *,
+    columns_count: int,
 ) -> None:
     service.spreadsheets().values().append(
         spreadsheetId=spreadsheet_id,
-        range=_sheet_range(sheet_name, "A:F"),
+        range=_sheet_range(sheet_name, f"A:{_column_name(columns_count)}"),
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": values},
     ).execute()
+
+
+def _read_table_rows(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+) -> list[dict[str, str]]:
+    values = _get_sheet_values(service, spreadsheet_id, sheet_name)
+    if not values:
+        return []
+
+    headers = [_clean_cell(header) for header in values[0]]
+    rows: list[dict[str, str]] = []
+    for raw_row in values[1:]:
+        if _is_empty_row(raw_row):
+            continue
+        row = {}
+        for index, header in enumerate(headers):
+            if header:
+                row[header] = _clean_cell(raw_row[index]) if index < len(raw_row) else ""
+        rows.append(row)
+    return rows
+
+
+def _has_duplicate_readia_payload(
+    row: Mapping[str, Any],
+    existing_rows: list[Mapping[str, Any]],
+) -> bool:
+    meeting_id = _clean_cell(row.get("meeting_id", ""))
+    report_url = _clean_cell(row.get("report_url", ""))
+    if not meeting_id and not report_url:
+        return False
+
+    for existing_row in existing_rows:
+        if meeting_id and meeting_id == _clean_cell(existing_row.get("meeting_id", "")):
+            return True
+        if report_url and report_url == _clean_cell(existing_row.get("report_url", "")):
+            return True
+    return False
+
+
+def _column_name(index: int) -> str:
+    name = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        name = chr(ord("A") + remainder) + name
+    return name or "A"
 
 
 def _sheet_range(sheet_name: str, cell_range: str) -> str:

@@ -123,6 +123,57 @@ def test_evento_sem_readia_vira_falta_candidata() -> None:
     assert rows[0]["match_type"] == "sem_match"
 
 
+def test_correcao_manual_transforma_falta_em_presente() -> None:
+    rows = build_agenda_preview_rows(
+        [_event(title="Maria Silva Santos PDITA123 and Natanael Hauck")],
+        [],
+        "2026-05-21",
+        correction_rows=[
+            {
+                "data": "2026-05-21",
+                "matricula": "PDITA123",
+                "nome": "Maria Silva Santos",
+                "status": "Presente",
+                "relatorio_readia": "Resumo corrigido",
+                "link_readia": "https://read.ai/report/corrigido",
+                "cursos_consumidos": "Banco de Dados",
+                "observacao": "payload recuperado manualmente",
+            }
+        ],
+    )
+
+    assert rows[0]["categoria"] == "correcao_manual"
+    assert rows[0]["status"] == "Presente"
+    assert rows[0]["readia_summary"] == "Resumo corrigido"
+    assert rows[0]["readia_report_url"] == "https://read.ai/report/corrigido"
+    assert rows[0]["cursos_consumidos"] == "Banco de Dados"
+
+
+def test_evento_recente_sem_readia_vira_aguardando_readia(monkeypatch) -> None:
+    monkeypatch.setattr(agenda_preview, "_today_sao_paulo", lambda: "2026-05-25")
+    monkeypatch.setattr(
+        agenda_preview,
+        "_now_sao_paulo",
+        lambda: datetime(2026, 5, 25, 13, 30, tzinfo=ZoneInfo("America/Sao_Paulo")),
+    )
+
+    rows = build_agenda_preview_rows(
+        [
+            _event(
+                title="Maria Silva Santos PDITA123 and Natanael Hauck",
+                start="2026-05-25T12:00:00-03:00",
+                end="2026-05-25T13:00:00-03:00",
+            )
+        ],
+        [],
+        "2026-05-25",
+    )
+
+    assert rows[0]["categoria"] == "aguardando_readia"
+    assert rows[0]["status"] == ""
+    assert rows[0]["match_type"] == "sem_match"
+
+
 def test_evento_futuro_do_dia_vira_revisar(monkeypatch) -> None:
     monkeypatch.setattr(agenda_preview, "_today_sao_paulo", lambda: "2026-05-25")
     monkeypatch.setattr(
@@ -183,6 +234,7 @@ def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> No
             }
         ],
     )
+    monkeypatch.setattr(agenda_preview, "read_monitoria_correction_rows", lambda: [])
 
     preview_dir = Path("data/previews/test_calendar_preview")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
@@ -228,6 +280,7 @@ def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, ca
             }
         ],
     )
+    monkeypatch.setattr(agenda_preview, "read_monitoria_correction_rows", lambda: [])
 
     preview_dir = Path("data/previews/test_calendar_preview_sem_data")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
@@ -276,6 +329,7 @@ def test_preview_gera_csv_debug_quando_payloads_na_data_sem_presenca(
             }
         ],
     )
+    monkeypatch.setattr(agenda_preview, "read_monitoria_correction_rows", lambda: [])
 
     preview_dir = Path("data/previews/test_calendar_preview_debug")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"

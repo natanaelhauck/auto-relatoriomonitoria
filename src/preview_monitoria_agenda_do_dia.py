@@ -17,6 +17,7 @@ from src.readia_matcher import (
     score_calendar_event_to_meeting,
 )
 from src.sheets_client import read_readia_payload_rows
+from src.sheets_client import read_monitoria_correction_rows
 from src.submission_runner import SAO_PAULO_TZ, _today_sao_paulo, parse_report_date
 
 PREVIEW_DIR = Path("data/previews")
@@ -36,6 +37,7 @@ CSV_FIELDS = [
     "readia_report_url",
     "cursos_consumidos",
     "motivo_deteccao_curso",
+    "motivo_falta",
     "observacao",
 ]
 DEBUG_CSV_FIELDS = [
@@ -65,22 +67,30 @@ def preview_monitoria_agenda_do_dia(
     target_date = report_date or _today_sao_paulo()
     events = get_events_for_date(target_date)
     payload_rows = read_readia_payload_rows()
+    correction_rows = read_monitoria_correction_rows()
     meetings = load_readia_meetings_from_sheet_rows(
         payload_rows,
         report_date=target_date,
     )
-    rows = build_agenda_preview_rows(events, meetings, target_date)
+    rows = build_agenda_preview_rows(
+        events,
+        meetings,
+        target_date,
+        correction_rows=correction_rows,
+    )
     csv_path = write_agenda_preview_csv(rows, target_date, preview_dir=preview_dir)
     counts = _category_counts(rows)
 
     print(f"Total eventos agenda: {len(events)}")
     print(f"Total payloads Read IA na planilha: {len(payload_rows)}")
     print(f"Total payloads Read IA filtrados pela data: {len(meetings)}")
+    print(f"Total correcoes manuais: {len(correction_rows)}")
     if payload_rows and not meetings:
         print("Existem payloads na planilha, mas nenhum para esta data.")
     print(f"Presentes confirmados: {counts['presentes_confirmados']}")
     print(f"Matches fracos: {counts['matches_fracos']}")
     print(f"Faltas candidatas: {counts['faltas_candidatas']}")
+    print(f"Aguardando Read IA: {counts['aguardando_readia']}")
     print(f"Eventos futuros: {counts['eventos_futuros']}")
     print(f"Caminho CSV: {csv_path}")
     if meetings and counts["presentes_confirmados"] == 0:
@@ -98,13 +108,23 @@ def build_agenda_preview_rows(
     events: list[dict[str, Any]],
     meetings: list[dict[str, Any]],
     report_date: str,
+    *,
+    correction_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build review rows from calendar events and Read IA meetings."""
     rows = []
+    corrections = _correction_index(correction_rows or [])
     for event in events:
         parsed_student = parse_student_from_calendar_title(str(event.get("title", "")))
         if parsed_student is None:
             rows.append(_unparsed_event_row(event, report_date))
+            continue
+
+        correction = corrections.get(
+            _correction_key(report_date, parsed_student.get("matricula", ""))
+        )
+        if correction is not None:
+            rows.append(_manual_correction_row(event, parsed_student, correction, report_date))
             continue
 
         if _is_future_event(event, report_date):
@@ -214,6 +234,18 @@ def _matched_event_row(
     report_date: str,
 ) -> dict[str, Any]:
     if match is None:
+        if _event_ended_less_than_minutes_ago(event, minutes=60):
+            return _base_row(
+                event,
+                student,
+                report_date,
+                categoria="aguardando_readia",
+                status="",
+                match_confidence=0,
+                match_type="sem_match",
+                observacao="evento recente; aguardando payload Read IA",
+            )
+
         return _base_row(
             event,
             student,
@@ -255,6 +287,32 @@ def _matched_event_row(
         cursos_consumidos=cursos_consumidos,
         motivo_deteccao_curso=motivo_deteccao_curso,
         observacao=observacao,
+    )
+
+
+def _manual_correction_row(
+    event: dict[str, Any],
+    student: dict[str, str],
+    correction: dict[str, Any],
+    report_date: str,
+) -> dict[str, Any]:
+    return _base_row(
+        event,
+        {
+            "nome": str(correction.get("nome") or student.get("nome", "")).strip(),
+            "matricula": student.get("matricula", ""),
+        },
+        report_date,
+        categoria="correcao_manual",
+        status=str(correction.get("status", "")).strip(),
+        match_confidence=0,
+        match_type="correcao_manual",
+        readia_summary=str(correction.get("relatorio_readia", "")).strip(),
+        readia_report_url=str(correction.get("link_readia", "")).strip(),
+        cursos_consumidos=str(correction.get("cursos_consumidos", "")).strip(),
+        motivo_falta=str(correction.get("motivo_falta", "")).strip(),
+        observacao=str(correction.get("observacao", "correcao manual")).strip()
+        or "correcao manual",
     )
 
 
@@ -303,6 +361,7 @@ def _base_row(
     readia_report_url: str = "",
     cursos_consumidos: str = "",
     motivo_deteccao_curso: str = "",
+    motivo_falta: str = "",
 ) -> dict[str, Any]:
     return {
         "data": report_date,
@@ -320,6 +379,7 @@ def _base_row(
         "readia_report_url": readia_report_url,
         "cursos_consumidos": cursos_consumidos,
         "motivo_deteccao_curso": motivo_deteccao_curso,
+        "motivo_falta": motivo_falta,
         "observacao": observacao,
     }
 
@@ -365,6 +425,8 @@ def _category_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         "faltas_candidatas": 0,
         "eventos_nao_parseados": 0,
         "eventos_futuros": 0,
+        "aguardando_readia": 0,
+        "correcao_manual": 0,
     }
     for row in rows:
         categoria = str(row.get("categoria", ""))
@@ -382,6 +444,37 @@ def _is_future_event(event: dict[str, Any], report_date: str) -> bool:
         return False
 
     return start > _now_sao_paulo()
+
+
+def _event_ended_less_than_minutes_ago(
+    event: dict[str, Any],
+    *,
+    minutes: int,
+) -> bool:
+    event_end = _parse_datetime(event.get("end")) or _parse_datetime(event.get("start"))
+    if event_end is None:
+        return False
+
+    elapsed = _now_sao_paulo() - event_end
+    return 0 <= elapsed.total_seconds() < minutes * 60
+
+
+def _correction_index(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    corrections: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = _correction_key(row.get("data", ""), row.get("matricula", ""))
+        if key[0] and key[1]:
+            corrections[key] = row
+    return corrections
+
+
+def _correction_key(date_value: Any, matricula: Any) -> tuple[str, str]:
+    return (
+        str(date_value or "").strip(),
+        str(matricula or "").strip().casefold(),
+    )
 
 
 def _parse_datetime(value: Any) -> datetime | None:

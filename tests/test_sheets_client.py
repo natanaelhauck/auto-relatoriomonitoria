@@ -49,10 +49,15 @@ def test_append_readia_payload_ordena_colunas_sem_chamada_real(monkeypatch) -> N
     monkeypatch.setattr(
         sheets_client,
         "_append_sheet_values",
-        lambda *args: appended.setdefault("appended", args),
+        lambda *args, **kwargs: appended.setdefault("appended", (args, kwargs)),
+    )
+    monkeypatch.setattr(
+        sheets_client,
+        "_read_table_rows",
+        lambda *args: [],
     )
 
-    sheets_client.append_readia_payload(
+    status = sheets_client.append_readia_payload(
         {
             "received_at": "2026-05-22T10:00:00-03:00",
             "meeting_id": "meet-123",
@@ -60,25 +65,162 @@ def test_append_readia_payload_ordena_colunas_sem_chamada_real(monkeypatch) -> N
             "summary": "Resumo",
             "report_url": "https://read.ai/report/meet-123",
             "payload_json": '{"meeting_id": "meet-123"}',
+            "payload_json_size": "26",
         }
     )
 
+    assert status == "saved"
     assert appended["ensured"] == (service, "sheet-id", "ReadIA Payloads")
     assert appended["appended"] == (
+        (
+            service,
+            "sheet-id",
+            "ReadIA Payloads",
+            [
+                [
+                    "2026-05-22T10:00:00-03:00",
+                    "meet-123",
+                    "Monitoria",
+                    "Resumo",
+                    "https://read.ai/report/meet-123",
+                    '{"meeting_id": "meet-123"}',
+                    "26",
+                    "saved",
+                    "",
+                ]
+            ],
+        ),
+        {"columns_count": 9},
+    )
+
+
+def test_append_readia_payload_pula_duplicado_sem_append(monkeypatch) -> None:
+    settings = SheetsSettings(
+        service_account_file="credentials/google-service-account.json",
+        spreadsheet_id="sheet-id",
+        sheet_nao_agendados="Em Analise",
+        sheet_finalizados="Finalizaram",
+        sheet_presentes="Presentes",
+        sheet_ativos="Ativo",
+        default_agente="Natanael",
+        sheet_readia_payloads="ReadIA Payloads",
+    )
+    service = object()
+    calls = {}
+
+    monkeypatch.setattr(sheets_client, "load_sheets_settings", lambda: settings)
+    monkeypatch.setattr(sheets_client, "_build_sheets_service", lambda _: service)
+    monkeypatch.setattr(
+        sheets_client,
+        "_ensure_readia_payload_sheet",
+        lambda *args: calls.setdefault("ensured", args),
+    )
+    monkeypatch.setattr(
+        sheets_client,
+        "_read_table_rows",
+        lambda *args: [{"meeting_id": "meet-123", "report_url": ""}],
+    )
+    monkeypatch.setattr(
+        sheets_client,
+        "_append_sheet_values",
+        lambda *args, **kwargs: calls.setdefault("appended", True),
+    )
+
+    status = sheets_client.append_readia_payload(
+        {
+            "meeting_id": "meet-123",
+            "report_url": "https://read.ai/report/meet-123",
+        }
+    )
+
+    assert status == "duplicate_skipped"
+    assert "appended" not in calls
+
+
+def test_read_monitoria_correction_rows_normaliza_colunas(monkeypatch) -> None:
+    settings = SheetsSettings(
+        service_account_file="credentials/google-service-account.json",
+        spreadsheet_id="sheet-id",
+        sheet_nao_agendados="Em Analise",
+        sheet_finalizados="Finalizaram",
+        sheet_presentes="Presentes",
+        sheet_ativos="Ativo",
+        default_agente="Natanael",
+        sheet_monitoria_corrections="Correções Monitoria",
+    )
+    service = object()
+
+    monkeypatch.setattr(sheets_client, "load_sheets_settings", lambda: settings)
+    monkeypatch.setattr(sheets_client, "_build_sheets_service", lambda _: service)
+    monkeypatch.setattr(
+        sheets_client,
+        "_ensure_monitoria_corrections_sheet",
+        lambda *args: None,
+    )
+    monkeypatch.setattr(
+        sheets_client,
+        "_get_sheet_values",
+        lambda *args: [
+            [
+                "data",
+                "matricula",
+                "nome",
+                "status",
+                "relatorio_readia",
+                "link_readia",
+                "cursos_consumidos",
+                "motivo_falta",
+                "observacao",
+            ],
+            [
+                "2026-05-22",
+                "PDITA123",
+                "Maria Silva",
+                "Presente",
+                "Resumo corrigido",
+                "https://read.ai/report/1",
+                "Python II",
+                "",
+                "ajuste manual",
+            ],
+        ],
+    )
+
+    rows = sheets_client.read_monitoria_correction_rows()
+
+    assert rows == [
+        {
+            "data": "2026-05-22",
+            "matricula": "PDITA123",
+            "nome": "Maria Silva",
+            "status": "Presente",
+            "relatorio_readia": "Resumo corrigido",
+            "link_readia": "https://read.ai/report/1",
+            "cursos_consumidos": "Python II",
+            "motivo_falta": "",
+            "observacao": "ajuste manual",
+            "agente": "Natanael",
+        }
+    ]
+
+
+def test_ensure_sheet_header_expande_cabecalho_readia_antigo() -> None:
+    service = MagicMock()
+    spreadsheets = service.spreadsheets.return_value
+    spreadsheets.values.return_value.get.return_value.execute.return_value = {
+        "values": [list(sheets_client.READIA_PAYLOAD_COLUMNS[:6])]
+    }
+    spreadsheets.values.return_value.update.return_value.execute.return_value = {}
+
+    sheets_client._ensure_sheet_header(
         service,
         "sheet-id",
         "ReadIA Payloads",
-        [
-            [
-                "2026-05-22T10:00:00-03:00",
-                "meet-123",
-                "Monitoria",
-                "Resumo",
-                "https://read.ai/report/meet-123",
-                '{"meeting_id": "meet-123"}',
-            ]
-        ],
+        list(sheets_client.READIA_PAYLOAD_COLUMNS),
+        warning_context="aba de payloads Read IA",
     )
+
+    spreadsheets.values.return_value.update.assert_called_once()
 
 
 def test_load_sheets_settings_aceita_json_da_service_account(monkeypatch) -> None:

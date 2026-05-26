@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
 
@@ -14,6 +15,8 @@ from src.sheets_client import (
     read_sheet_rows,
 )
 from src.submission_runner import parse_report_date
+
+TRUNCATED_PAYLOAD_WARNING = "[TRUNCADO - payload grande demais]"
 
 
 def inspect_readia_sheet(
@@ -30,8 +33,14 @@ def inspect_readia_sheet(
     normalized_rows = [normalize_readia_sheet_row(row) for row in rows]
     date_counts = Counter(row.get("date") or "sem_data" for row in normalized_rows)
     known_students = _load_known_students()
+    sheet_error_rows = _sheet_error_rows(rows)
+    truncated_rows = _truncated_rows(rows)
+    duplicate_groups = _duplicate_groups(rows)
 
     print(f"Total payloads na aba: {len(rows)}")
+    print(f"Payloads com sheet_error: {len(sheet_error_rows)}")
+    print(f"Payloads truncados: {len(truncated_rows)}")
+    print(f"Possiveis duplicados: {_duplicate_count(duplicate_groups)}")
     print("Payloads por data:")
     for date_value, count in sorted(date_counts.items()):
         print(f"  {date_value}: {count}")
@@ -51,6 +60,21 @@ def inspect_readia_sheet(
         print(f"Alunos conhecidos carregados: {len(known_students)}")
     else:
         print("Alunos conhecidos carregados: 0")
+
+    if sheet_error_rows:
+        print("Linhas com sheet_error:")
+        for row in sheet_error_rows:
+            print(
+                "  "
+                f"meeting_id={row.get('meeting_id', '')} "
+                f"report_url={row.get('report_url', '')} "
+                f"erro={_preview(row.get('sheet_error', ''), max_length=180)}"
+            )
+
+    if duplicate_groups:
+        print("Possiveis duplicados:")
+        for key, duplicate_rows in duplicate_groups.items():
+            print(f"  {key}: {len(duplicate_rows)} linhas")
 
     for row, meeting in display_pairs:
         payload_json = str(row.get("payload_json", "") or "")
@@ -129,6 +153,47 @@ def _preview(value: Any, max_length: int = 300) -> str:
     if len(text) <= max_length:
         return text
     return f"{text[: max_length - 3]}..."
+
+
+def _sheet_error_rows(rows: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return [
+        row
+        for row in rows
+        if str(row.get("sheet_error", "")).strip()
+        or str(row.get("sheet_status", "")).strip().casefold() == "error"
+    ]
+
+
+def _truncated_rows(rows: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return [
+        row
+        for row in rows
+        if str(row.get("payload_json", "")).startswith(TRUNCATED_PAYLOAD_WARNING)
+    ]
+
+
+def _duplicate_groups(
+    rows: list[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        meeting_id = str(row.get("meeting_id", "")).strip()
+        report_url = str(row.get("report_url", "")).strip()
+        if meeting_id:
+            grouped[f"meeting_id={meeting_id}"].append(row)
+        if report_url:
+            grouped[f"report_url={report_url}"].append(row)
+
+    return {key: value for key, value in grouped.items() if len(value) > 1}
+
+
+def _duplicate_count(duplicate_groups: dict[str, list[Mapping[str, Any]]]) -> int:
+    duplicate_row_ids = {
+        id(row)
+        for duplicate_rows in duplicate_groups.values()
+        for row in duplicate_rows
+    }
+    return len(duplicate_row_ids)
 
 
 def main() -> None:
