@@ -33,18 +33,18 @@ def test_email_nos_participantes_gera_confianca_100() -> None:
     assert result.match_type == "email"
 
 
-def test_primeiro_segundo_nome_no_titulo_gera_confianca_30() -> None:
+def test_primeiro_segundo_nome_no_titulo_gera_confianca_60() -> None:
     result = match_student_to_meeting(
         _student(),
         _meeting(title="Maria Silva and Natanael Hauck"),
     )
 
     assert result is not None
-    assert result.confidence == 30
+    assert result.confidence == 60
     assert result.match_type == "primeiro_segundo_nome"
 
 
-def test_primeiro_segundo_nome_no_resumo_gera_confianca_30() -> None:
+def test_primeiro_segundo_nome_no_resumo_gera_confianca_60() -> None:
     result = match_student_to_meeting(
         _student(),
         _meeting(
@@ -54,29 +54,51 @@ def test_primeiro_segundo_nome_no_resumo_gera_confianca_30() -> None:
     )
 
     assert result is not None
-    assert result.confidence == 30
+    assert result.confidence == 60
     assert result.match_type == "primeiro_segundo_nome"
 
 
-def test_nome_completo_no_payload_json_gera_confianca_50() -> None:
+def test_nome_completo_no_payload_json_gera_confianca_80() -> None:
     result = match_student_to_meeting(
         _student(),
         _meeting(payload_json='{"notes": "Atendimento de Maria Silva Santos"}'),
     )
 
     assert result is not None
-    assert result.confidence == 50
+    assert result.confidence == 80
     assert result.match_type == "nome_completo"
 
 
-def test_primeiro_nome_no_participante_gera_confianca_15() -> None:
+def test_matricula_no_payload_json_gera_confianca_100() -> None:
+    result = match_student_to_meeting(
+        _student(),
+        _meeting(payload_json='{"notes": "aluno PDITA-001 participou"}'),
+    )
+
+    assert result is not None
+    assert result.confidence == 100
+    assert result.match_type == "matricula"
+
+
+def test_nome_com_acento_bate_sem_acento_com_confianca_80() -> None:
+    result = match_student_to_meeting(
+        {"nome": "Kaik Otávio", "matricula": "PDITA870"},
+        _meeting(summary="Kaik Otavio participou da monitoria."),
+    )
+
+    assert result is not None
+    assert result.confidence == 80
+    assert result.match_type == "nome_completo"
+
+
+def test_primeiro_nome_no_participante_gera_confianca_50() -> None:
     result = match_student_to_meeting(
         _student(),
         _meeting(participants=["Maria"]),
     )
 
     assert result is not None
-    assert result.confidence == 15
+    assert result.confidence == 50
     assert result.match_type == "primeiro_nome"
 
 
@@ -107,6 +129,22 @@ def test_load_readia_meetings_from_sheet_rows_normaliza_e_filtra_data() -> None:
     assert meetings[0]["date"] == "2026-05-21"
     assert meetings[0]["participants"] == ["Maria Silva"]
     assert "PDITA001" in meetings[0]["payload_json"]
+
+
+def test_load_readia_meetings_from_sheet_rows_aceita_received_at_da_data() -> None:
+    meetings = load_readia_meetings_from_sheet_rows(
+        [
+            {
+                "received_at": "2026-05-21T14:30:00-03:00",
+                "meeting_id": "meet-1",
+                "payload_json": '{"created_at": "2026-05-20T22:00:00Z"}',
+            }
+        ],
+        report_date="2026-05-21",
+    )
+
+    assert len(meetings) == 1
+    assert meetings[0]["meeting_id"] == "meet-1"
 
 
 def test_normaliza_summary_em_caminhos_alternativos_do_payload_json() -> None:

@@ -85,11 +85,11 @@ def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:
 
     assert rows[0]["categoria"] == "presentes_confirmados"
     assert rows[0]["status"] == "Presente"
-    assert rows[0]["match_confidence"] == 50
+    assert rows[0]["match_confidence"] == 80
     assert rows[0]["match_type"] == "nome_completo"
 
 
-def test_evento_com_primeiro_segundo_nome_vira_match_fraco_falta() -> None:
+def test_evento_com_primeiro_segundo_nome_vira_presente() -> None:
     rows = build_agenda_preview_rows(
         [
             _event(
@@ -101,11 +101,11 @@ def test_evento_com_primeiro_segundo_nome_vira_match_fraco_falta() -> None:
         "2026-05-21",
     )
 
-    assert rows[0]["categoria"] == "matches_fracos"
-    assert rows[0]["status"] == "Falta"
-    assert rows[0]["match_confidence"] == 30
+    assert rows[0]["categoria"] == "presentes_confirmados"
+    assert rows[0]["status"] == "Presente"
+    assert rows[0]["match_confidence"] == 60
     assert rows[0]["match_type"] == "primeiro_segundo_nome"
-    assert rows[0]["readia_summary"] == ""
+    assert rows[0]["readia_summary"] == "Resumo gerado para Maria Silva."
 
 
 def test_evento_sem_readia_vira_falta_candidata() -> None:
@@ -178,6 +178,7 @@ def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> No
     )
     preview_dir = Path("data/previews/test_calendar_preview")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
+    debug_csv_path = preview_dir / "debug_matches_2026-05-21.csv"
     try:
         exit_code = agenda_preview.preview_monitoria_agenda_do_dia(
             report_date="2026-05-21",
@@ -186,6 +187,8 @@ def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> No
     finally:
         if csv_path.exists():
             csv_path.unlink()
+        if debug_csv_path.exists():
+            debug_csv_path.unlink()
         if preview_dir.exists():
             preview_dir.rmdir()
 
@@ -222,6 +225,7 @@ def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, ca
     )
     preview_dir = Path("data/previews/test_calendar_preview_sem_data")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
+    debug_csv_path = preview_dir / "debug_matches_2026-05-21.csv"
     try:
         exit_code = agenda_preview.preview_monitoria_agenda_do_dia(
             report_date="2026-05-21",
@@ -230,6 +234,8 @@ def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, ca
     finally:
         if csv_path.exists():
             csv_path.unlink()
+        if debug_csv_path.exists():
+            debug_csv_path.unlink()
         if preview_dir.exists():
             preview_dir.rmdir()
 
@@ -269,7 +275,7 @@ def test_preview_gera_csv_debug_quando_payloads_na_data_sem_presenca(
     )
     preview_dir = Path("data/previews/test_calendar_preview_debug")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
-    debug_csv_path = preview_dir / "debug_readia_matches_2026-05-21.csv"
+    debug_csv_path = preview_dir / "debug_matches_2026-05-21.csv"
     try:
         exit_code = agenda_preview.preview_monitoria_agenda_do_dia(
             report_date="2026-05-21",
@@ -287,8 +293,9 @@ def test_preview_gera_csv_debug_quando_payloads_na_data_sem_presenca(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert f"Caminho CSV debug: {debug_csv_path}" in output
-    assert "meet-sem-match" in debug_content
+    assert "Monitoria de outro aluno" in debug_content
     assert "sem_match" in debug_content
+    assert "texto_usado_para_match" in debug_content
 
 
 def test_calendar_service_prioriza_json_da_service_account(monkeypatch) -> None:

@@ -24,6 +24,7 @@ SUMMARY_KEYS = (
     "transcript",
 )
 SUMMARY_FALLBACK_MAX_LENGTH = 1500
+FIRST_NAME_STOPWORDS = {"aluno", "aluna", "monitoria"}
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,12 @@ def load_readia_meetings_from_sheet_rows(
     meetings = []
     for row in rows:
         meeting = normalize_readia_sheet_row(row)
-        if report_date is None or meeting.get("date") == report_date:
+        row_received_date = _extract_date(row.get("received_at"))
+        if (
+            report_date is None
+            or meeting.get("date") == report_date
+            or row_received_date == report_date
+        ):
             meetings.append(meeting)
     return meetings
 
@@ -200,8 +206,7 @@ def score_subject_to_meeting(
     match_parts: list[str] = []
 
     if matricula and matricula in identifier_search_text:
-        score += 100
-        match_parts.append("matricula")
+        return MatchResult(100, "matricula", meeting)
 
     meeting_emails = {_normalize_email(item) for item in meeting.get("emails", [])}
     participant_emails = {
@@ -214,16 +219,30 @@ def score_subject_to_meeting(
         match_parts.append("email")
 
     if _contains_normalized_phrase(normalized_search_text, full_name):
-        score += 50
+        score += 80
         match_parts.append("nome_completo")
     elif _contains_normalized_phrase(normalized_search_text, first_second_name):
-        score += 30
+        score += 60
         match_parts.append("primeiro_segundo_nome")
-    elif _contains_normalized_phrase(normalized_search_text, first_name):
-        score += 15
+    elif _contains_first_name_and_important_surname(
+        normalized_search_text,
+        full_name,
+    ):
+        score += 55
+        match_parts.append("primeiro_nome_sobrenome")
+    elif _is_matchable_first_name(first_name) and _contains_normalized_phrase(
+        normalized_search_text,
+        first_name,
+    ):
+        score += 50
         match_parts.append("primeiro_nome")
 
     return MatchResult(score, "+".join(match_parts) or "sem_match", meeting)
+
+
+def meeting_search_text(meeting: Mapping[str, Any]) -> str:
+    """Return the exact meeting text used for matching."""
+    return _meeting_search_text(meeting)
 
 
 def best_match_student_to_meetings(
@@ -327,6 +346,8 @@ def _meeting_search_text(meeting: Mapping[str, Any]) -> str:
             _clean_scalar(meeting.get("title")),
             _clean_scalar(meeting.get("summary")),
             participants,
+            _clean_scalar(meeting.get("report_url")),
+            _clean_scalar(meeting.get("raw_text")),
             _clean_scalar(meeting.get("payload_json")),
         )
         if value
@@ -337,6 +358,32 @@ def _contains_normalized_phrase(text: str, phrase: str) -> bool:
     if not text or not phrase:
         return False
     return f" {phrase} " in f" {text} "
+
+
+def _contains_first_name_and_important_surname(text: str, full_name: str) -> bool:
+    first_name = _first_name(full_name)
+    if not _contains_normalized_phrase(text, first_name):
+        return False
+
+    return any(
+        _contains_normalized_phrase(text, surname)
+        for surname in _important_surnames(full_name)
+    )
+
+
+def _important_surnames(full_name: str) -> list[str]:
+    ignored = {
+        "da",
+        "de",
+        "do",
+        "das",
+        "dos",
+        "e",
+    }
+    parts = [part for part in full_name.split() if part and part not in ignored]
+    if len(parts) <= 2:
+        return []
+    return parts[2:]
 
 
 def _parse_json_payload(value: str) -> Any:
@@ -416,3 +463,7 @@ def _first_second_name(full_name: str) -> str:
 def _first_name(full_name: str) -> str:
     parts = [part for part in full_name.split() if part]
     return parts[0] if parts else ""
+
+
+def _is_matchable_first_name(first_name: str) -> bool:
+    return len(first_name) >= 3 and first_name not in FIRST_NAME_STOPWORDS
