@@ -18,6 +18,26 @@ Fontes e destinos:
 A fonte diária de presença é a pasta do Drive `Read AI Meeting Notes`, onde o
 Read IA salva os documentos automaticamente.
 
+## Render Opcional
+
+O Render não executa o fluxo real de envio. Ele pode ser usado apenas como
+healthcheck público para portfólio.
+
+Endpoints:
+
+```text
+GET /       => Auto Relatório Monitoria
+GET /health => {"status":"ok","mode":"docs"}
+```
+
+Start command sugerido:
+
+```bash
+gunicorn wsgi:app
+```
+
+O fluxo real continua rodando localmente pelo Agendador de Tarefas do Windows.
+
 ## Fluxo Semanal
 
 Roda sexta-feira às 15:00.
