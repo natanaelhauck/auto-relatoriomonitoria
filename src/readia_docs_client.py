@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from typing import Any
 
 from dotenv import load_dotenv
@@ -20,6 +21,9 @@ GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document"
 SECTION_HEADINGS = {
     "summary",
     "action items",
+    "key questions",
+    "chapters topics",
+    "chapters and topics",
     "transcript",
 }
 
@@ -176,7 +180,6 @@ def extract_readia_doc_report(
         "transcript": transcript,
         "report_url": report_url,
         "raw_text": raw_text,
-        "payload_json": raw_text,
         "participants": [],
         "emails": [],
         "source": "google_docs",
@@ -237,13 +240,14 @@ def _collect_structural_text(value: dict[str, Any], chunks: list[str]) -> None:
 
 def _extract_field(raw_text: str, field_name: str) -> str:
     lines = [line.strip() for line in raw_text.splitlines()]
-    field_key = field_name.casefold()
+    field_key = _normalize_heading(field_name)
     for index, line in enumerate(lines):
         if not line:
             continue
-        if line.casefold().startswith(f"{field_key}:"):
-            return line.split(":", 1)[1].strip()
-        if line.casefold() == field_key:
+        label, value = _split_labeled_line(line)
+        if label == field_key:
+            return value
+        if _normalize_heading(line) == field_key:
             for next_line in lines[index + 1 :]:
                 if next_line:
                     return next_line.strip()
@@ -252,29 +256,41 @@ def _extract_field(raw_text: str, field_name: str) -> str:
 
 def _extract_section(raw_text: str, heading: str) -> str:
     lines = raw_text.splitlines()
-    heading_key = heading.casefold()
+    heading_key = _normalize_heading(heading)
     collecting = False
     section_lines: list[str] = []
 
     for line in lines:
         clean_line = line.strip()
-        normalized = clean_line.rstrip(":").casefold()
+        normalized = _normalize_heading(clean_line)
         if not collecting:
-            if normalized == heading_key or clean_line.casefold().startswith(
-                f"{heading_key}:"
-            ):
+            label, value = _split_labeled_line(clean_line)
+            if normalized == heading_key or label == heading_key:
                 collecting = True
-                if ":" in clean_line:
-                    remainder = clean_line.split(":", 1)[1].strip()
-                    if remainder:
-                        section_lines.append(remainder)
+                if label == heading_key and value:
+                    section_lines.append(value)
             continue
 
-        if normalized in SECTION_HEADINGS and normalized != heading_key:
+        if heading_key != "transcript" and normalized in SECTION_HEADINGS:
             break
         section_lines.append(line)
 
     return "\n".join(section_lines).strip()
+
+
+def _split_labeled_line(line: str) -> tuple[str, str]:
+    if ":" not in line:
+        return "", ""
+    label, value = line.split(":", 1)
+    return _normalize_heading(label), value.strip()
+
+
+def _normalize_heading(value: Any) -> str:
+    text = str(value or "").strip().casefold().replace("&", " and ")
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _extract_date(value: Any) -> str:

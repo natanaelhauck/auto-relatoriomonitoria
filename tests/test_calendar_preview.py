@@ -178,7 +178,6 @@ def test_preview_usa_docs_readia_do_google_drive(monkeypatch, capsys) -> None:
                 "summary": "",
                 "report_url": "https://docs.google.com/document/d/abc/edit",
                 "raw_text": "Maria Silva Santos participou.",
-                "payload_json": "Maria Silva Santos participou.",
             }
         ],
     )
@@ -269,7 +268,6 @@ def test_preview_gera_csv_debug_quando_docs_na_data_sem_presenca(
                 "summary": "Sem dados do aluno.",
                 "report_url": "https://docs.google.com/document/d/doc-sem-match/edit",
                 "raw_text": "Outro participante",
-                "payload_json": "Outro participante",
             }
         ],
     )
@@ -350,7 +348,6 @@ def _meeting(**overrides: object) -> dict[str, object]:
         "participants": [],
         "emails": [],
         "raw_text": "",
-        "payload_json": "",
     }
     meeting.update(overrides)
     return meeting

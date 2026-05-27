@@ -68,6 +68,43 @@ Texto da conversa.
     assert report["raw_text"] == raw_text
 
 
+def test_extract_readia_doc_report_normaliza_headings_com_emojis() -> None:
+    raw_text = """Meeting: Monitoria Simone PDBD164
+Event time: 2026-05-27 14:00
+
+✨ Summary
+A aluna assistiu Banco de Dados.
+
+✅ Action Items
+Deve fazer Python I na próxima semana.
+
+ Key Questions
+Pergunta importante.
+
+ Chapters & Topics
+Tópico registrado.
+
+ Transcript
+Linha um da transcrição.
+✅ Action Items
+Esta linha ainda pertence ao transcript.
+"""
+
+    report = extract_readia_doc_report(
+        {"id": "doc789", "name": "2026-05-27 - SIMONE PDBD164"},
+        raw_text,
+    )
+
+    assert report["meeting"] == "Monitoria Simone PDBD164"
+    assert report["event_time"] == "2026-05-27 14:00"
+    assert report["summary"] == "A aluna assistiu Banco de Dados."
+    assert report["transcript"] == (
+        "Linha um da transcrição.\n"
+        "✅ Action Items\n"
+        "Esta linha ainda pertence ao transcript."
+    )
+
+
 def test_extract_readia_doc_report_monta_link_quando_drive_nao_traz_webview() -> None:
     report = extract_readia_doc_report(
         {"id": "doc456", "name": "2026-05-27 - Monitoria"},

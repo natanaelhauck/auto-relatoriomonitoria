@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from typing import Any
 
 from src.readia_docs_client import list_readia_docs_for_date
@@ -12,14 +13,17 @@ from src.submission_runner import parse_report_date
 def inspect_readia_docs(*, report_date: str) -> int:
     """Print a compact summary of Read IA docs found for a date."""
     docs = list_readia_docs_for_date(report_date)
-    print(f"Data: {report_date}")
-    print(f"Total docs encontrados: {len(docs)}")
+    _print(f"Data: {report_date}")
+    _print(f"Total docs encontrados: {len(docs)}")
     for doc in docs:
-        print(f"titulo: {doc.get('title', '')}")
-        print(f"  data: {doc.get('date', '')}")
-        print(f"  meeting: {doc.get('meeting', '')}")
-        print(f"  summary: {_preview(doc.get('summary', ''), 300)}")
-        print(f"  link: {doc.get('report_url', '')}")
+        summary = str(doc.get("summary", "") or "").strip()
+        _print(f"titulo: {doc.get('title', '')}")
+        _print(f"  data: {doc.get('date', '')}")
+        _print(f"  meeting: {doc.get('meeting', '')}")
+        _print(f"  summary: {_preview(summary, 500)}")
+        if not summary:
+            _print("  AVISO: summary vazio")
+        _print(f"  link_google_docs: {doc.get('report_url', '')}")
     return 0
 
 
@@ -45,6 +49,16 @@ def _preview(value: Any, max_length: int) -> str:
     return f"{text[: max_length - 3]}..."
 
 
+def _print(value: Any) -> None:
+    text = str(value)
+    encoding = sys.stdout.encoding or "utf-8"
+    safe_text = text.encode(encoding, errors="replace").decode(
+        encoding,
+        errors="replace",
+    )
+    print(safe_text)
+
+
 def main() -> None:
     """CLI entry point."""
     parser = build_parser()
@@ -52,7 +66,7 @@ def main() -> None:
     try:
         exit_code = inspect_readia_docs(report_date=args.report_date)
     except RuntimeError as exc:
-        print(f"ERRO - {exc}")
+        _print(f"ERRO - {exc}")
         exit_code = 1
     raise SystemExit(exit_code)
 

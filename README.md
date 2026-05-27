@@ -1,61 +1,33 @@
-# Automacao de Relatorios de Monitoria
+# Automação de Relatórios de Monitoria
 
-Projeto Python para enviar relatorios de monitoria ao Google Forms.
+Sistema Python para automatizar lançamentos de monitorias no Google Forms a
+partir de fontes do Google Workspace. O projeto cruza agenda, relatórios do
+Read IA salvos como Google Docs e planilhas de controle para reduzir trabalho
+manual e manter duplicidade sob controle.
 
-Fluxos principais:
+## Arquitetura
 
-- Semanal: alunos nao agendados e alunos que finalizaram o curso.
-- Diario: Google Agenda do dia cruzado com Google Docs gerados pelo Read IA.
+Fontes e destinos:
 
-## Preparacao
+- Google Agenda: lista as monitorias previstas no dia.
+- Google Docs do Read IA: confirma presença e fornece Summary/link do relatório.
+- Google Forms: recebe os lançamentos finais de `Presente`, `Falta`, `Aluno não
+  agendado(Fantasma)` e `Aluno finalizou o curso`.
+- Google Sheets: fornece as abas semanais `Em Análise` e `Finalizaram`.
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Copie `.env.example` para `.env` e configure:
-
-```env
-GOOGLE_SERVICE_ACCOUNT_JSON={...json completo da service account...}
-GOOGLE_SPREADSHEET_ID=...
-GOOGLE_CALENDAR_ID=primary
-GOOGLE_CALENDAR_TIMEZONE=America/Sao_Paulo
-READIA_DOCS_FOLDER_NAME=Read AI Meeting Notes
-READIA_DOCS_FOLDER_ID=
-SHEET_NAO_AGENDADOS=Em Análise
-SHEET_FINALIZADOS=Finalizaram
-DEFAULT_AGENTE=Natanael
-```
-
-Tambem e possivel usar `GOOGLE_SERVICE_ACCOUNT_FILE` apontando para um JSON
-local. Quando `GOOGLE_SERVICE_ACCOUNT_JSON` estiver preenchida, ela tem
-prioridade.
-
-Compartilhe com o e-mail da service account:
-
-- a planilha usada no fluxo semanal;
-- a agenda usada no fluxo diario;
-- a pasta do Drive `Read AI Meeting Notes`.
-
-No Google Cloud, habilite as APIs Google Sheets, Google Calendar, Google Drive
-e Google Docs.
-
-`READIA_DOCS_FOLDER_ID` e opcional. Use quando a busca por nome nao encontrar a
-pasta do Read IA, principalmente em Drive compartilhado ou quando houver pastas
-com nomes repetidos.
+A fonte diária de presença é a pasta do Drive `Read AI Meeting Notes`, onde o
+Read IA salva os documentos automaticamente.
 
 ## Fluxo Semanal
 
-Roda sexta-feira as 15:00.
+Roda sexta-feira às 15:00.
 
-Origem:
+Entradas:
 
-- Aba `Em Análise` (`SHEET_NAO_AGENDADOS`) => `Aluno não agendado(Fantasma)`.
-- Aba `Finalizaram` (`SHEET_FINALIZADOS`) => `Aluno finalizou o curso`.
+- Aba `Em Análise` => `Aluno não agendado(Fantasma)`.
+- Aba `Finalizaram` => `Aluno finalizou o curso`.
 
-O envio aplica duplicidade semanal por matricula, status, ano ISO e semana ISO,
+O envio aplica duplicidade semanal por matrícula, status, ano ISO e semana ISO,
 usando os CSVs em `data/submission_logs/`.
 
 Comandos:
@@ -67,38 +39,36 @@ python -m src.weekly_auto_submit
 python -m src.weekly_auto_submit --yes
 ```
 
-Sem `--yes`, o modo real pede confirmacao digitando exatamente `ENVIAR`.
+Sem `--yes`, o modo real pede confirmação digitando exatamente `ENVIAR`.
 
-## Fluxo Diario
+## Fluxo Diário
 
-Roda em dias uteis por volta de 15:05.
+Roda em dias úteis por volta de 15:05.
 
-Origem:
+Entradas:
 
 - Google Agenda do dia => monitorias previstas.
-- Google Docs na pasta `Read AI Meeting Notes` => presencas confirmadas pelo
+- Google Docs na pasta `Read AI Meeting Notes` => presenças confirmadas pelo
   Read IA.
 
 Regra:
 
-- Se houver match com documento do Read IA com score 50 ou maior: envia
-  `Presente`.
-- Se nao houver match com documento do Read IA: envia `Falta` com motivo
-  `Sem resposta`.
-- Matches fracos ficam como `Falta` e tambem usam motivo `Sem resposta`.
-- Eventos sem matricula reconhecivel no titulo ficam em `eventos_nao_parseados`
-  e nao sao enviados automaticamente.
+- Match com documento Read IA, score 50 ou maior: envia `Presente`.
+- Sem match com documento Read IA: envia `Falta` com motivo `Sem resposta`.
+- Match fraco: envia `Falta` com motivo `Sem resposta`.
+- Evento sem matrícula reconhecível: fica em `eventos_nao_parseados` e não é
+  enviado automaticamente.
 
-Para `Presente`, o formulario recebe:
+Para `Presente`, o Forms recebe:
 
-- `relatorio_readia`: Summary extraido do Google Docs.
+- `relatorio_readia`: Summary extraído do Google Docs.
 - `link_readia`: link do documento no Google Drive.
 - `cursos_consumidos`: curso detectado de forma conservadora ou `Não consumiu`.
 
-Se o Read IA nao gerar ou nao salvar o Google Docs de uma monitoria, ela sera
-lancada como `Falta` e deve ser corrigida manualmente no Google Forms.
+Se o Read IA não gerar/salvar o documento de uma monitoria, ela será lançada
+como `Falta` e deve ser corrigida manualmente no Google Forms.
 
-O envio aplica duplicidade diaria por matricula, status e data.
+O envio aplica duplicidade diária por matrícula, status e data.
 
 Comandos:
 
@@ -109,7 +79,7 @@ python -m src.daily_auto_submit --date 2026-05-26
 python -m src.daily_auto_submit --yes
 ```
 
-Filtros uteis:
+Filtros:
 
 ```bash
 python -m src.daily_auto_submit --presentes-only --dry-run
@@ -117,10 +87,10 @@ python -m src.daily_auto_submit --faltas-only --dry-run
 python -m src.daily_auto_submit --limit 1 --dry-run
 ```
 
-O comando diario gera o preview em
-`data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`, gera tambem
-`data/previews/debug_matches_YYYY-MM-DD.csv` e em seguida usa o preview para
-enviar o Forms.
+O comando diário gera:
+
+- `data/previews/preview_agenda_monitoria_YYYY-MM-DD.csv`
+- `data/previews/debug_matches_YYYY-MM-DD.csv`
 
 Para gerar apenas o preview:
 
@@ -134,43 +104,68 @@ Para inspecionar os documentos do Read IA:
 python -m src.inspect_readia_docs --date 2026-05-27
 ```
 
-Categorias do preview diario:
+## Configuração
 
-- `presentes_confirmados`
-- `matches_fracos`
-- `faltas_candidatas`
-- `eventos_nao_parseados`
+Crie um ambiente virtual e instale as dependências:
 
-O fluxo padrao nao usa aba de correcoes manuais.
-
-## Webhook Read IA Legado
-
-O webhook antigo fica como legado. Ele nao e mais a fonte principal do fluxo
-diario, porque o projeto agora usa os Google Docs salvos pelo Read IA no Drive.
-
-Endpoints legados:
-
-```text
-GET  /health
-GET  /webhook-status
-POST /read-webhook
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 ```
+
+Copie `.env.example` para `.env` e configure:
+
+```env
+GOOGLE_SERVICE_ACCOUNT_JSON={...json completo da service account...}
+GOOGLE_SERVICE_ACCOUNT_FILE=credentials/google-service-account.json
+GOOGLE_SPREADSHEET_ID=
+GOOGLE_CALENDAR_ID=primary
+GOOGLE_CALENDAR_TIMEZONE=America/Sao_Paulo
+READIA_DOCS_FOLDER_NAME=Read AI Meeting Notes
+READIA_DOCS_FOLDER_ID=
+SHEET_NAO_AGENDADOS=Em Análise
+SHEET_FINALIZADOS=Finalizaram
+SHEET_PRESENTES=Presentes
+SHEET_ATIVOS=Ativo
+DEFAULT_AGENTE=Natanael
+FORM_URL=https://docs.google.com/forms/d/e/.../viewform
+```
+
+`GOOGLE_SERVICE_ACCOUNT_JSON` tem prioridade sobre
+`GOOGLE_SERVICE_ACCOUNT_FILE`. Use `READIA_DOCS_FOLDER_ID` quando a busca por
+nome não encontrar a pasta do Read IA.
+
+Compartilhe com o e-mail da service account:
+
+- a planilha semanal;
+- a agenda das monitorias;
+- a pasta do Drive `Read AI Meeting Notes`.
+
+No Google Cloud, habilite:
+
+- Google Sheets API
+- Google Calendar API
+- Google Drive API
+- Google Docs API
+
+Não versione `.env`, arquivos em `credentials/`, exports locais ou CSVs gerados.
 
 ## Agendador Windows
 
-Crie duas tarefas no Agendador de Tarefas do Windows.
+Crie duas tarefas no Agendador de Tarefas.
 
 Semanal:
 
-- Frequencia: semanal
+- Frequência: semanal
 - Dia: sexta-feira
-- Horario: 15:00
+- Horário: 15:00
 - Programa: `scripts/run_weekly_auto_submit.bat`
 
-Diario:
+Diário:
 
-- Frequencia: dias uteis
-- Horario: 15:05
+- Frequência: dias úteis
+- Horário: 15:05
 - Programa: `scripts/run_daily_auto_submit.bat`
 
 Os scripts ativam `.venv`, quando existir, e rodam:
@@ -180,20 +175,23 @@ python -m src.weekly_auto_submit --yes
 python -m src.daily_auto_submit --yes
 ```
 
-O computador precisa estar ligado, conectado a internet e com acesso ao `.env`
-e as credenciais configuradas.
+## Qualidade
 
-## Inspecionar o Google Forms
+Detecção de curso é conservadora:
 
-Use quando o formulario mudar e for necessario revisar os `entry.*`:
+- não infere Python I/II só por “curso de Python”;
+- só marca curso perto de expressão clara de consumo;
+- contexto de meta, orientação ou tarefa futura não conta como consumo.
 
-```bash
-python -m src.inspect_form
-```
-
-## Testes
+Rodar validação local:
 
 ```bash
 python -m compileall src
 python -m pytest
+```
+
+Para revisar os campos do Google Forms quando o formulário mudar:
+
+```bash
+python -m src.inspect_form
 ```
