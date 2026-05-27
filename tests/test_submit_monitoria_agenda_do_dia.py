@@ -22,7 +22,7 @@ def test_submit_agenda_dry_run_envia_presentes_e_faltas(capsys) -> None:
                     "nome": "Aluno Presente",
                     "matricula": "PDITA001",
                     "readia_summary": "Resumo Read IA",
-                    "readia_report_url": "https://read.ai/report/1",
+                    "readia_report_url": "https://docs.google.com/document/d/doc1/edit",
                     "observacao": "match confirmado",
                 },
                 {
@@ -54,7 +54,7 @@ def test_submit_agenda_dry_run_envia_presentes_e_faltas(capsys) -> None:
     assert output.count("[DRY-RUN]") == 2
     assert "'status': 'Presente'" in output
     assert "'relatorio_readia': 'Resumo Read IA'" in output
-    assert "'link_readia': 'https://read.ai/report/1'" in output
+    assert "'link_readia': 'https://docs.google.com/document/d/doc1/edit'" in output
     assert "'cursos_consumidos': ['Não consumiu']" in output
     assert "'motivo_deteccao_curso':" in output
     assert "'status': 'Falta'" in output
@@ -135,8 +135,16 @@ def test_submit_agenda_detecta_cursos_pelo_resumo_readia(capsys) -> None:
     [
         ("Aluno consumiu Banco de Dados", ["Banco de Dados"]),
         ("Aluno assistiu Python intermediário", ["Python II"]),
+        (
+            "Aluno concluiu Python I e entregou Banco de Dados",
+            ["Python I", "Banco de Dados"],
+        ),
+        ("Aluno iniciou Fundamentos de interface", ["Fundamentos de interface"]),
         ("Meta para próxima semana Banco de Dados", ["Não consumiu"]),
         ("Foi orientado a assistir Fundamentos de interface", ["Não consumiu"]),
+        ("O aluno deve fazer Banco de Dados na próxima semana", ["Não consumiu"]),
+        ("Foi recomendado assistir Fundamentos de interface", ["Não consumiu"]),
+        ("Falamos do curso de Python", ["Não consumiu"]),
         (
             "Perguntei se consumiu Python intermediário e passei como meta Banco de Dados",
             ["Python II"],

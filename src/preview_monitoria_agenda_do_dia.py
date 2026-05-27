@@ -1,4 +1,4 @@
-"""Generate a daily preview using Google Calendar events and Read IA payloads."""
+"""Generate a daily preview using Google Calendar events and Read IA Google Docs."""
 
 from __future__ import annotations
 
@@ -12,11 +12,10 @@ from src.course_detection import describe_consumed_courses_from_text
 from src.readia_matcher import (
     MatchResult,
     best_match_calendar_event_to_meetings,
-    load_readia_meetings_from_sheet_rows,
     meeting_search_text,
     score_calendar_event_to_meeting,
 )
-from src.sheets_client import read_readia_payload_rows
+from src.readia_docs_client import list_readia_docs_for_date
 from src.submission_runner import _today_sao_paulo, parse_report_date
 
 PREVIEW_DIR = Path("data/previews")
@@ -58,14 +57,10 @@ def preview_monitoria_agenda_do_dia(
     report_date: str | None = None,
     preview_dir: Path = PREVIEW_DIR,
 ) -> int:
-    """Read calendar events and Read IA payloads, then write a review CSV."""
+    """Read calendar events and Read IA Google Docs, then write a review CSV."""
     target_date = report_date or _today_sao_paulo()
     events = get_events_for_date(target_date)
-    payload_rows = read_readia_payload_rows()
-    meetings = load_readia_meetings_from_sheet_rows(
-        payload_rows,
-        report_date=target_date,
-    )
+    meetings = list_readia_docs_for_date(target_date)
     rows = build_agenda_preview_rows(events, meetings, target_date)
     csv_path = write_agenda_preview_csv(rows, target_date, preview_dir=preview_dir)
     debug_rows = build_debug_readia_match_rows(events, meetings, target_date)
@@ -77,10 +72,7 @@ def preview_monitoria_agenda_do_dia(
     counts = _category_counts(rows)
 
     print(f"Total eventos agenda: {len(events)}")
-    print(f"Total payloads Read IA na planilha: {len(payload_rows)}")
-    print(f"Total payloads Read IA filtrados pela data: {len(meetings)}")
-    if payload_rows and not meetings:
-        print("Existem payloads na planilha, mas nenhum para esta data.")
+    print(f"Total docs Read IA na data: {len(meetings)}")
     print(f"Presentes confirmados: {counts['presentes_confirmados']}")
     print(f"Matches fracos: {counts['matches_fracos']}")
     if counts["matches_fracos"]:
@@ -134,7 +126,7 @@ def build_debug_readia_match_rows(
     meetings: list[dict[str, Any]],
     report_date: str,
 ) -> list[dict[str, Any]]:
-    """Build one debug row for each calendar event and Read IA payload pair."""
+    """Build one debug row for each calendar event and Read IA doc pair."""
     rows = []
     for event in events:
         parsed_student = parse_student_from_calendar_title(str(event.get("title", "")))
@@ -174,7 +166,7 @@ def write_debug_readia_matches_csv(
     *,
     preview_dir: Path = PREVIEW_DIR,
 ) -> Path:
-    """Write debug rows with every event x Read IA payload combination."""
+    """Write debug rows with every event x Read IA doc combination."""
     preview_dir.mkdir(parents=True, exist_ok=True)
     csv_path = preview_dir / f"debug_matches_{report_date}.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as csv_file:

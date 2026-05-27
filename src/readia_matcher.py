@@ -1,4 +1,4 @@
-"""Read IA payload normalization and student matching."""
+"""Read IA report normalization and student matching."""
 
 from __future__ import annotations
 

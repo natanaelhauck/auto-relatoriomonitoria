@@ -1,4 +1,4 @@
-"""Daily automatic submission from Google Calendar and Read IA payloads."""
+"""Daily automatic submission from Google Calendar and Read IA Google Docs."""
 
 from __future__ import annotations
 

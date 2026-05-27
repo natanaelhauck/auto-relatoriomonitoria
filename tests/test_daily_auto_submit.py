@@ -22,7 +22,7 @@ def test_daily_auto_submit_dry_run_nao_envia(capsys) -> None:
                     "nome": "Aluno Presente",
                     "matricula": "PDITA001",
                     "readia_summary": "Aluno consumiu Banco de Dados.",
-                    "readia_report_url": "https://read.ai/report/1",
+                    "readia_report_url": "https://docs.google.com/document/d/doc1/edit",
                 }
             ],
         )

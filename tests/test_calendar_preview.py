@@ -60,6 +60,7 @@ def test_presente_confirmado_preenche_readia_summary() -> None:
             _meeting(
                 title="Monitoria PDITA123 and Natanael Hauck",
                 summary="Aluno consumiu Banco de Dados.",
+                report_url="https://docs.google.com/document/d/doc-presente/edit",
             )
         ],
         "2026-05-21",
@@ -67,11 +68,15 @@ def test_presente_confirmado_preenche_readia_summary() -> None:
 
     assert rows[0]["status"] == "Presente"
     assert rows[0]["readia_summary"] == "Aluno consumiu Banco de Dados."
+    assert (
+        rows[0]["readia_report_url"]
+        == "https://docs.google.com/document/d/doc-presente/edit"
+    )
     assert rows[0]["cursos_consumidos"] == "Banco de Dados"
     assert "consumiu" in rows[0]["motivo_deteccao_curso"]
 
 
-def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:
+def test_evento_com_nome_completo_no_raw_text_do_doc_vira_presente() -> None:
     rows = build_agenda_preview_rows(
         [
             _event(
@@ -79,7 +84,7 @@ def test_evento_com_nome_completo_no_payload_json_vira_presente() -> None:
                 start="2026-05-21T10:00:00-03:00",
             )
         ],
-        [_meeting(payload_json='{"notes": "Maria Silva Santos participou."}')],
+        [_meeting(raw_text="Maria Silva Santos participou.")],
         "2026-05-21",
     )
 
@@ -152,7 +157,7 @@ def test_evento_sem_matricula_vai_para_nao_parseados() -> None:
     assert rows[0]["match_type"] == "sem_matricula_no_titulo"
 
 
-def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> None:
+def test_preview_usa_docs_readia_do_google_drive(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         agenda_preview,
         "get_events_for_date",
@@ -165,14 +170,15 @@ def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> No
     )
     monkeypatch.setattr(
         agenda_preview,
-        "read_readia_payload_rows",
-        lambda: [
+        "list_readia_docs_for_date",
+        lambda report_date: [
             {
-                "received_at": "2026-05-21T14:30:00-03:00",
+                "date": report_date,
                 "title": "Monitoria",
                 "summary": "",
-                "report_url": "https://read.ai/report/abc",
-                "payload_json": '{"notes": "Maria Silva Santos participou."}',
+                "report_url": "https://docs.google.com/document/d/abc/edit",
+                "raw_text": "Maria Silva Santos participou.",
+                "payload_json": "Maria Silva Santos participou.",
             }
         ],
     )
@@ -195,13 +201,12 @@ def test_preview_usa_payloads_readia_do_google_sheets(monkeypatch, capsys) -> No
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Total eventos agenda: 1" in output
-    assert "Total payloads Read IA na planilha: 1" in output
-    assert "Total payloads Read IA filtrados pela data: 1" in output
+    assert "Total docs Read IA na data: 1" in output
     assert "Presentes confirmados: 1" in output
     assert f"Caminho CSV: {csv_path}" in output
 
 
-def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, capsys) -> None:
+def test_preview_sem_docs_readia_gera_falta(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         agenda_preview,
         "get_events_for_date",
@@ -214,14 +219,8 @@ def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, ca
     )
     monkeypatch.setattr(
         agenda_preview,
-        "read_readia_payload_rows",
-        lambda: [
-            {
-                "received_at": "2026-05-20T14:30:00-03:00",
-                "title": "Monitoria",
-                "payload_json": '{"notes": "Maria Silva Santos participou."}',
-            }
-        ],
+        "list_readia_docs_for_date",
+        lambda report_date: [],
     )
     preview_dir = Path("data/previews/test_calendar_preview_sem_data")
     csv_path = preview_dir / "preview_agenda_monitoria_2026-05-21.csv"
@@ -241,12 +240,11 @@ def test_preview_avisa_quando_planilha_tem_payloads_mas_data_nao(monkeypatch, ca
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Total payloads Read IA na planilha: 1" in output
-    assert "Total payloads Read IA filtrados pela data: 0" in output
-    assert "Existem payloads na planilha, mas nenhum para esta data." in output
+    assert "Total docs Read IA na data: 0" in output
+    assert "Faltas candidatas: 1" in output
 
 
-def test_preview_gera_csv_debug_quando_payloads_na_data_sem_presenca(
+def test_preview_gera_csv_debug_quando_docs_na_data_sem_presenca(
     monkeypatch,
     capsys,
 ) -> None:
@@ -262,14 +260,16 @@ def test_preview_gera_csv_debug_quando_payloads_na_data_sem_presenca(
     )
     monkeypatch.setattr(
         agenda_preview,
-        "read_readia_payload_rows",
-        lambda: [
+        "list_readia_docs_for_date",
+        lambda report_date: [
             {
-                "received_at": "2026-05-21T14:30:00-03:00",
-                "meeting_id": "meet-sem-match",
+                "date": report_date,
+                "document_id": "doc-sem-match",
                 "title": "Monitoria de outro aluno",
                 "summary": "Sem dados do aluno.",
-                "payload_json": '{"notes": "Outro participante"}',
+                "report_url": "https://docs.google.com/document/d/doc-sem-match/edit",
+                "raw_text": "Outro participante",
+                "payload_json": "Outro participante",
             }
         ],
     )
@@ -346,7 +346,7 @@ def _meeting(**overrides: object) -> dict[str, object]:
         "start_time": "",
         "title": "",
         "summary": "",
-        "report_url": "https://read.ai/report/abc",
+        "report_url": "https://docs.google.com/document/d/abc/edit",
         "participants": [],
         "emails": [],
         "raw_text": "",

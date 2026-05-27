@@ -35,26 +35,20 @@ COURSE_NAMES = [
 
 COURSE_SYNONYMS = {
     "Python intermediário": "Python II",
-    "Python avançado": "Python II",
-    "Python básico": "Python I",
-    "interfaces": "Fundamentos de interface",
     "fundamentos de interface": "Fundamentos de interface",
-    "banco": "Banco de Dados",
     "banco de dados": "Banco de Dados",
 }
 
 POSITIVE_EXPRESSIONS = [
     "consumiu",
     "assistiu",
-    "viu",
-    "fez",
     "concluiu",
-    "avançou em",
-    "estudou",
-    "realizou",
-    "trabalhou em",
+    "entregou",
     "iniciou",
-    "finalizou",
+    "avançou em",
+    "avançou",
+    "fez",
+    "estudou",
 ]
 
 FUTURE_EXPRESSIONS = [
@@ -62,12 +56,16 @@ FUTURE_EXPRESSIONS = [
     "metas",
     "próxima semana",
     "próximas semanas",
+    "combinado",
     "para depois",
     "ficou combinado",
+    "orientação",
     "foi orientado a",
+    "deve fazer",
     "deve assistir",
     "precisa assistir",
     "precisa consumir",
+    "recomendado",
     "plano",
     "planejamento",
     "sugeri",
@@ -75,6 +73,7 @@ FUTURE_EXPRESSIONS = [
     "foi passado",
     "foi proposto",
     "tarefa para casa",
+    "tarefa futura",
 ]
 
 
@@ -329,6 +328,7 @@ def _future_expression_starts_new_scope(future: _Phrase, normalized_gap: str) ->
     future_starters = {
         _normalize_search_text("ficou combinado"),
         _normalize_search_text("foi orientado a"),
+        _normalize_search_text("deve fazer"),
         _normalize_search_text("deve assistir"),
         _normalize_search_text("precisa assistir"),
         _normalize_search_text("precisa consumir"),
@@ -337,6 +337,7 @@ def _future_expression_starts_new_scope(future: _Phrase, normalized_gap: str) ->
         _normalize_search_text("foi passado"),
         _normalize_search_text("foi proposto"),
         _normalize_search_text("tarefa para casa"),
+        _normalize_search_text("tarefa futura"),
     }
     return future.normalized in future_starters and normalized_gap.strip() == "e"
 
