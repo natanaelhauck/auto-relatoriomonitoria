@@ -201,7 +201,7 @@ def _submission_row(row: dict[str, str], status: str) -> dict[str, Any]:
         base_row.update(
             {
                 "relatorio_readia": relatorio_readia,
-                "link_readia": row.get("readia_report_url", ""),
+                "link_readia": _readia_link(row),
                 "cursos_consumidos": course_detection.courses,
             }
         )
@@ -216,6 +216,14 @@ def _readia_report(row: dict[str, str]) -> str:
         if value:
             return value
     return RELATORIO_READIA_INDISPONIVEL
+
+
+def _readia_link(row: dict[str, str]) -> str:
+    for field_name in ("readia_report_url", "report_url", "link_google_docs"):
+        value = str(row.get(field_name, "") or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def detect_courses_from_text(text: Any) -> list[str]:

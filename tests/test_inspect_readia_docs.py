@@ -13,7 +13,8 @@ def test_inspect_readia_docs_mostra_aviso_quando_summary_vazio(monkeypatch, caps
                 "title": "2026-05-27 - Aluno PDITA001",
                 "meeting": "Monitoria",
                 "summary": "",
-                "report_url": "https://docs.google.com/document/d/doc1/edit",
+                "readia_report_url": "https://docs.google.com/document/d/doc1/edit",
+                "link_google_docs": "https://docs.google.com/document/d/doc1/edit",
             }
         ],
     )
@@ -24,4 +25,6 @@ def test_inspect_readia_docs_mostra_aviso_quando_summary_vazio(monkeypatch, caps
     assert exit_code == 0
     assert "Total docs encontrados: 1" in output
     assert "AVISO: summary vazio" in output
+    assert "link_readia: https://docs.google.com/document/d/doc1/edit" in output
     assert "link_google_docs: https://docs.google.com/document/d/doc1/edit" in output
+    assert "AVISO: usando link do Google Docs como fallback" in output

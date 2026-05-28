@@ -237,7 +237,7 @@ def _matched_event_row(
         match_type=match.match_type,
         readia_title=match.meeting.get("title", ""),
         readia_summary=readia_summary,
-        readia_report_url=match.meeting.get("report_url", ""),
+        readia_report_url=_readia_report_url(match.meeting),
         cursos_consumidos=cursos_consumidos,
         motivo_deteccao_curso=motivo_deteccao_curso,
         motivo_falta=motivo_falta,
@@ -310,7 +310,7 @@ def _debug_row(
         "calendar_title": event.get("title", ""),
         "readia_title": meeting.get("title", ""),
         "readia_summary": _preview_cell(meeting.get("summary", "")),
-        "readia_report_url": meeting.get("report_url", ""),
+        "readia_report_url": _readia_report_url(meeting),
         "score": score,
         "motivos_score": motivos_score,
         "texto_usado_para_match": meeting_search_text(meeting),
@@ -322,6 +322,14 @@ def _preview_cell(value: Any, max_length: int = 300) -> str:
     if len(text) <= max_length:
         return text
     return f"{text[: max_length - 3]}..."
+
+
+def _readia_report_url(meeting: dict[str, Any]) -> str:
+    for field_name in ("readia_report_url", "report_url", "link_google_docs"):
+        value = str(meeting.get(field_name, "") or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _category_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

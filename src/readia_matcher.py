@@ -159,6 +159,8 @@ def _meeting_search_text(meeting: Mapping[str, Any]) -> str:
             _clean_scalar(meeting.get("title")),
             _clean_scalar(meeting.get("summary")),
             participants,
+            _clean_scalar(meeting.get("readia_report_url")),
+            _clean_scalar(meeting.get("link_google_docs")),
             _clean_scalar(meeting.get("report_url")),
             _clean_scalar(meeting.get("raw_text")),
         )

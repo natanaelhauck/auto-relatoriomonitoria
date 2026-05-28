@@ -60,7 +60,8 @@ def test_presente_confirmado_preenche_readia_summary() -> None:
             _meeting(
                 title="Monitoria PDITA123 and Natanael Hauck",
                 summary="Aluno consumiu Banco de Dados.",
-                report_url="https://docs.google.com/document/d/doc-presente/edit",
+                readia_report_url="https://app.read.ai/report/doc-presente",
+                link_google_docs="https://docs.google.com/document/d/doc-presente/edit",
             )
         ],
         "2026-05-21",
@@ -70,7 +71,7 @@ def test_presente_confirmado_preenche_readia_summary() -> None:
     assert rows[0]["readia_summary"] == "Aluno consumiu Banco de Dados."
     assert (
         rows[0]["readia_report_url"]
-        == "https://docs.google.com/document/d/doc-presente/edit"
+        == "https://app.read.ai/report/doc-presente"
     )
     assert rows[0]["cursos_consumidos"] == "Banco de Dados"
     assert "consumiu" in rows[0]["motivo_deteccao_curso"]
@@ -344,6 +345,8 @@ def _meeting(**overrides: object) -> dict[str, object]:
         "start_time": "",
         "title": "",
         "summary": "",
+        "readia_report_url": "https://app.read.ai/report/abc",
+        "link_google_docs": "https://docs.google.com/document/d/abc/edit",
         "report_url": "https://docs.google.com/document/d/abc/edit",
         "participants": [],
         "emails": [],

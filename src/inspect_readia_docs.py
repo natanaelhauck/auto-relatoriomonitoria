@@ -17,13 +17,18 @@ def inspect_readia_docs(*, report_date: str) -> int:
     _print(f"Total docs encontrados: {len(docs)}")
     for doc in docs:
         summary = str(doc.get("summary", "") or "").strip()
+        link_readia = str(doc.get("readia_report_url", "") or "").strip()
+        link_google_docs = str(doc.get("link_google_docs", "") or "").strip()
         _print(f"titulo: {doc.get('title', '')}")
         _print(f"  data: {doc.get('date', '')}")
         _print(f"  meeting: {doc.get('meeting', '')}")
         _print(f"  summary: {_preview(summary, 500)}")
         if not summary:
             _print("  AVISO: summary vazio")
-        _print(f"  link_google_docs: {doc.get('report_url', '')}")
+        _print(f"  link_readia: {link_readia}")
+        _print(f"  link_google_docs: {link_google_docs}")
+        if link_readia and link_readia == link_google_docs:
+            _print("  AVISO: usando link do Google Docs como fallback")
     return 0
 
 

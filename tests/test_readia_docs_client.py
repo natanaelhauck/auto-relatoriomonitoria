@@ -2,7 +2,9 @@
 
 from src.readia_docs_client import (
     extract_readia_doc_report,
+    extract_readia_doc_report_from_google_doc,
     find_readia_notes_folder_id,
+    google_doc_meeting_link,
     google_doc_to_text,
 )
 
@@ -65,6 +67,8 @@ Texto da conversa.
     assert report["summary"] == "A aluna concluiu Banco de Dados."
     assert report["transcript"] == "Texto da conversa."
     assert report["report_url"] == file["webViewLink"]
+    assert report["readia_report_url"] == file["webViewLink"]
+    assert report["link_google_docs"] == file["webViewLink"]
     assert report["raw_text"] == raw_text
 
 
@@ -113,6 +117,107 @@ def test_extract_readia_doc_report_monta_link_quando_drive_nao_traz_webview() ->
 
     assert report["summary"] == "Resumo curto"
     assert report["report_url"] == "https://docs.google.com/document/d/doc456/edit"
+    assert report["readia_report_url"] == "https://docs.google.com/document/d/doc456/edit"
+    assert report["link_google_docs"] == "https://docs.google.com/document/d/doc456/edit"
+
+
+def test_google_doc_meeting_link_extrai_hyperlink_do_meeting() -> None:
+    readia_url = "https://app.read.ai/analytics/meetings/abc123"
+    document = {
+        "body": {
+            "content": [
+                {
+                    "paragraph": {
+                        "elements": [
+                            {"textRun": {"content": "Meeting: "}},
+                            {
+                                "textRun": {
+                                    "content": "Arthur Xavier Costa PDBD166",
+                                    "textStyle": {"link": {"url": readia_url}},
+                                },
+                            },
+                            {"textRun": {"content": "\nSummary\nResumo"}},
+                        ],
+                    },
+                }
+            ],
+        },
+    }
+
+    assert google_doc_meeting_link(document) == readia_url
+
+
+def test_extract_readia_doc_report_from_google_doc_usa_link_do_meeting() -> None:
+    readia_url = "https://app.read.ai/analytics/meetings/abc123"
+    google_docs_url = "https://docs.google.com/document/d/doc789/edit"
+    document = {
+        "body": {
+            "content": [
+                {
+                    "paragraph": {
+                        "elements": [
+                            {"textRun": {"content": "Meeting: "}},
+                            {
+                                "textRun": {
+                                    "content": "Arthur Xavier Costa PDBD166",
+                                    "textStyle": {"link": {"url": readia_url}},
+                                },
+                            },
+                            {
+                                "textRun": {
+                                    "content": (
+                                        "\nEvent time: 2026-05-27 14:00\n"
+                                        "Summary\nResumo da monitoria."
+                                    )
+                                }
+                            },
+                        ],
+                    },
+                }
+            ],
+        },
+    }
+
+    report = extract_readia_doc_report_from_google_doc(
+        {"id": "doc789", "name": "2026-05-27 - Arthur", "webViewLink": google_docs_url},
+        document,
+    )
+
+    assert report["readia_report_url"] == readia_url
+    assert report["report_url"] == readia_url
+    assert report["link_google_docs"] == google_docs_url
+    assert report["summary"] == "Resumo da monitoria."
+
+
+def test_extract_readia_doc_report_from_google_doc_fallback_google_docs() -> None:
+    google_docs_url = "https://docs.google.com/document/d/doc-sem-link/edit"
+    document = {
+        "body": {
+            "content": [
+                {
+                    "paragraph": {
+                        "elements": [
+                            {"textRun": {"content": "Meeting: Monitoria sem link\n"}},
+                            {"textRun": {"content": "Summary\nResumo sem link"}},
+                        ],
+                    },
+                }
+            ],
+        },
+    }
+
+    report = extract_readia_doc_report_from_google_doc(
+        {
+            "id": "doc-sem-link",
+            "name": "2026-05-27 - Monitoria sem link",
+            "webViewLink": google_docs_url,
+        },
+        document,
+    )
+
+    assert report["readia_report_url"] == google_docs_url
+    assert report["report_url"] == google_docs_url
+    assert report["link_google_docs"] == google_docs_url
 
 
 def test_find_readia_notes_folder_id_usa_id_configurado(monkeypatch) -> None:

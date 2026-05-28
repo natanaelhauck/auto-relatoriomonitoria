@@ -39,8 +39,8 @@ def list_readia_docs_for_date(report_date: str) -> list[dict[str, Any]]:
     )
     reports = []
     for file in files:
-        raw_text = get_google_doc_text(services["docs"], str(file["id"]))
-        reports.append(extract_readia_doc_report(file, raw_text))
+        document = get_google_doc(services["docs"], str(file["id"]))
+        reports.append(extract_readia_doc_report_from_google_doc(file, document))
     return reports
 
 
@@ -139,10 +139,14 @@ def list_readia_doc_files(
             return sorted(files, key=lambda item: str(item.get("name", "")))
 
 
+def get_google_doc(docs_service: Any, document_id: str) -> dict[str, Any]:
+    """Read a Google Docs document payload."""
+    return docs_service.documents().get(documentId=document_id).execute()
+
+
 def get_google_doc_text(docs_service: Any, document_id: str) -> str:
     """Read a Google Docs document and return its plain text content."""
-    document = docs_service.documents().get(documentId=document_id).execute()
-    return google_doc_to_text(document)
+    return google_doc_to_text(get_google_doc(docs_service, document_id))
 
 
 def google_doc_to_text(document: dict[str, Any]) -> str:
@@ -153,16 +157,63 @@ def google_doc_to_text(document: dict[str, Any]) -> str:
     return "".join(chunks).strip()
 
 
+def google_doc_meeting_link(document: dict[str, Any]) -> str:
+    """Return the hyperlink attached to the Meeting field, when present."""
+    lines = google_doc_lines_with_links(document)
+    for index, line_runs in enumerate(lines):
+        line_text = "".join(text for text, _ in line_runs).strip()
+        if not line_text:
+            continue
+
+        label, _ = _split_labeled_line(line_text)
+        if label == "meeting":
+            return _first_link_after_label(line_runs, line_text) or ""
+
+        if _normalize_heading(line_text) == "meeting":
+            link = _first_link_in_runs(line_runs)
+            if link:
+                return link
+            for next_line_runs in lines[index + 1 :]:
+                if "".join(text for text, _ in next_line_runs).strip():
+                    return _first_link_in_runs(next_line_runs) or ""
+    return ""
+
+
+def google_doc_lines_with_links(document: dict[str, Any]) -> list[list[tuple[str, str]]]:
+    """Extract text lines from a Google Docs payload preserving run hyperlinks."""
+    lines: list[list[tuple[str, str]]] = [[]]
+    for content in document.get("body", {}).get("content", []):
+        _collect_structural_lines_with_links(content, lines)
+    return [line for line in lines if line]
+
+
+def extract_readia_doc_report_from_google_doc(
+    file: dict[str, Any],
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract report fields from a Drive file plus Google Docs API payload."""
+    raw_text = google_doc_to_text(document)
+    return extract_readia_doc_report(
+        file,
+        raw_text,
+        readia_report_url=google_doc_meeting_link(document),
+    )
+
+
 def extract_readia_doc_report(
     file: dict[str, Any],
     raw_text: str,
+    *,
+    readia_report_url: str = "",
 ) -> dict[str, Any]:
     """Extract the fields used by the monitoring flow from one Read IA doc."""
     title = str(file.get("name", "")).strip()
-    report_url = str(file.get("webViewLink", "")).strip()
+    link_google_docs = str(file.get("webViewLink", "")).strip()
     document_id = str(file.get("id", "")).strip()
-    if not report_url and document_id:
-        report_url = f"https://docs.google.com/document/d/{document_id}/edit"
+    if not link_google_docs and document_id:
+        link_google_docs = f"https://docs.google.com/document/d/{document_id}/edit"
+
+    readia_url = str(readia_report_url or "").strip() or link_google_docs
 
     meeting = _extract_field(raw_text, "Meeting")
     event_time = _extract_field(raw_text, "Event time")
@@ -178,7 +229,9 @@ def extract_readia_doc_report(
         "start_time": event_time,
         "summary": summary,
         "transcript": transcript,
-        "report_url": report_url,
+        "readia_report_url": readia_url,
+        "link_google_docs": link_google_docs,
+        "report_url": readia_url,
         "raw_text": raw_text,
         "participants": [],
         "emails": [],
@@ -236,6 +289,77 @@ def _collect_structural_text(value: dict[str, Any], chunks: list[str]) -> None:
     if "tableOfContents" in value:
         for content in value["tableOfContents"].get("content", []):
             _collect_structural_text(content, chunks)
+
+
+def _collect_structural_lines_with_links(
+    value: dict[str, Any],
+    lines: list[list[tuple[str, str]]],
+) -> None:
+    if "paragraph" in value:
+        for element in value["paragraph"].get("elements", []):
+            text_run = element.get("textRun")
+            if text_run:
+                text = str(text_run.get("content", ""))
+                url = _text_run_link_url(text_run)
+                _append_text_run_to_lines(lines, text, url)
+        return
+
+    if "table" in value:
+        for row in value["table"].get("tableRows", []):
+            for cell in row.get("tableCells", []):
+                for content in cell.get("content", []):
+                    _collect_structural_lines_with_links(content, lines)
+        return
+
+    if "tableOfContents" in value:
+        for content in value["tableOfContents"].get("content", []):
+            _collect_structural_lines_with_links(content, lines)
+
+
+def _append_text_run_to_lines(
+    lines: list[list[tuple[str, str]]],
+    text: str,
+    url: str,
+) -> None:
+    if not lines:
+        lines.append([])
+
+    for chunk in text.splitlines(keepends=True):
+        line_text = chunk.rstrip("\r\n")
+        if line_text:
+            lines[-1].append((line_text, url))
+        if chunk.endswith(("\n", "\r")):
+            lines.append([])
+
+
+def _text_run_link_url(text_run: dict[str, Any]) -> str:
+    link = text_run.get("textStyle", {}).get("link", {})
+    return str(link.get("url", "") or "").strip()
+
+
+def _first_link_after_label(
+    line_runs: list[tuple[str, str]],
+    line_text: str,
+) -> str:
+    colon_index = line_text.find(":")
+    target_start = colon_index + 1 if colon_index >= 0 else 0
+    offset = 0
+    fallback = ""
+    for text, url in line_runs:
+        next_offset = offset + len(text)
+        if url and not fallback:
+            fallback = url
+        if url and next_offset > target_start:
+            return url
+        offset = next_offset
+    return fallback
+
+
+def _first_link_in_runs(line_runs: list[tuple[str, str]]) -> str:
+    for _, url in line_runs:
+        if url:
+            return url
+    return ""
 
 
 def _extract_field(raw_text: str, field_name: str) -> str:
